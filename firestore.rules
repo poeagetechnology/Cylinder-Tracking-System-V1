@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return isAuthenticated() && getUserData().status == 'approved';
+    }
+
+    function isSuperAdmin() {
+      return isApproved() && getUserData().role == 'superadmin';
+    }
+
+    function isAdmin() {
+      return isApproved() && (getUserData().role == 'admin' || getUserData().role == 'superadmin');
+    }
+
+    function isUser() {
+      return isApproved() && getUserData().role == 'user';
+    }
+
+    // Settings — readable by all, writable only by superadmin
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // Users — admin+ can list/update all; users can read their own
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if isSuperAdmin();
+    }
+
+    // Cylinders — all approved users can read; admin+ can write
+    match /cylinders/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // Gas Types
+    match /gasTypes/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // Fillings — all approved users can read/create; admin+ can update/delete
+    match /fillings/{docId} {
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
+    }
+
+    // Inventory — all approved
+    match /inventory/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // Customers, Suppliers, Vehicles, HR, Expenses — admin only
+    match /customers/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /suppliers/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /vehicles/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /fuelLogs/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /employees/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /attendance/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /salaries/{docId} {
+      allow read, write: if isAdmin();
+    }
+    match /expenses/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
