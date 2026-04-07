@@ -39,6 +39,7 @@ export const cylinderSchema = Yup.object({
   capacity: Yup.number().positive().required('Capacity is required'),
   status: Yup.string().required('Status is required'),
   location: Yup.string().required('Location is required'),
+  client: Yup.string().required('Client is required'),
 })
 
 export const customerSchema = Yup.object({
@@ -46,6 +47,7 @@ export const customerSchema = Yup.object({
   phone: Yup.string().matches(/^\d{10}$/, 'Invalid phone number').required('Phone is required'),
   email: Yup.string().email('Invalid email').nullable(),
   address: Yup.string().required('Address is required'),
+  area: Yup.string().required('Area/Location is required'),
 })
 
 export const supplierSchema = Yup.object({

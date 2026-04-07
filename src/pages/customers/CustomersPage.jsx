@@ -8,13 +8,14 @@ import { addDocument, updateDocument, deleteDocument } from '../../services/fire
 import { Table } from '../../components/ui/Table'
 import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { FormField, Input, Textarea } from '../../components/ui/FormField'
+import { FormField, Input, Select, Textarea } from '../../components/ui/FormField'
 import { useTable } from '../../hooks/useTable'
 import { customerSchema } from '../../utils/validations'
 import { fmtDate } from '../../utils/helpers'
 
 export const CustomersPage = () => {
   const { data: customers, loading } = useFirestoreCollection('customers')
+  const { data: areas } = useFirestoreCollection('areas')
   const [modalOpen, setModalOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
@@ -22,22 +23,22 @@ export const CustomersPage = () => {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: yupResolver(customerSchema),
-    defaultValues: { name: '', phone: '', email: '', address: '' },
+    defaultValues: { name: '', phone: '', email: '', address: '', area: '' },
   })
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
-    customers, ['name', 'phone', 'email'], 10
+    customers, ['name', 'phone', 'email', 'area'], 10
   )
 
   const openAdd = () => {
     setEditItem(null)
-    reset({ name: '', phone: '', email: '', address: '' })
+    reset({ name: '', phone: '', email: '', address: '', area: '' })
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditItem(item)
-    reset({ name: item.name, phone: item.phone, email: item.email || '', address: item.address })
+    reset({ name: item.name, phone: item.phone, email: item.email || '', address: item.address, area: item.area || '' })
     setModalOpen(true)
   }
 
@@ -72,6 +73,7 @@ export const CustomersPage = () => {
     { key: 'name', label: 'Name', sortable: true },
     { key: 'phone', label: 'Phone' },
     { key: 'email', label: 'Email', render: (row) => row.email || '—' },
+    { key: 'area', label: 'Area/Location', render: (row) => row.area || '—' },
     { key: 'address', label: 'Address', render: (row) => <span className="truncate max-w-xs block">{row.address}</span> },
     { key: 'createdAt', label: 'Added', render: (row) => fmtDate(row.createdAt) },
     { key: 'actions', label: 'Actions', render: (row) => (
@@ -130,6 +132,12 @@ export const CustomersPage = () => {
           </FormField>
           <FormField label="Email" error={errors.email?.message}>
             <Input register={register('email')} error={errors.email} type="email" placeholder="Optional email" />
+          </FormField>
+          <FormField label="Area/Location" error={errors.area?.message} required>
+            <Select register={register('area')} error={errors.area}>
+              <option value="">Select area</option>
+              {areas.map(a => <option key={a.id} value={a.areaName}>{a.areaName}</option>)}
+            </Select>
           </FormField>
           <FormField label="Address" error={errors.address?.message} required>
             <Textarea register={register('address')} error={errors.address} placeholder="Full address" />

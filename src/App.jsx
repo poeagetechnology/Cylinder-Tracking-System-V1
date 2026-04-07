@@ -17,6 +17,7 @@ import { GasTypesPage } from './pages/gas/GasTypesPage'
 import { CylindersPage } from './pages/cylinders/CylindersPage'
 import { FillingPage } from './pages/filling/FillingPage'
 import { InventoryPage } from './pages/inventory/InventoryPage'
+import { MovementsPage } from './pages/inventory/MovementsPage'
 import { VehiclesPage } from './pages/vehicles/VehiclesPage'
 import { CustomersPage } from './pages/customers/CustomersPage'
 import { SuppliersPage } from './pages/suppliers/SuppliersPage'
@@ -24,6 +25,7 @@ import { HRPage } from './pages/hr/HRPage'
 import { ExpensesPage } from './pages/expenses/ExpensesPage'
 import { ReportsPage } from './pages/reports/ReportsPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
+import { AreasPage } from './pages/settings/AreasPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { isSystemInitialized } from './services/authService'
 
@@ -52,6 +54,7 @@ function AppRoutes() {
           <Route path="/cylinders" element={<CylindersPage />} />
           <Route path="/filling" element={<FillingPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/movements" element={<MovementsPage />} />
 
           <Route element={<RoleBasedRoute allowedRoles={['admin', 'superadmin']} />}>
             <Route path="/gas" element={<GasTypesPage />} />
@@ -66,6 +69,7 @@ function AppRoutes() {
 
           <Route element={<RoleBasedRoute allowedRoles={['superadmin']} />}>
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/areas" element={<AreasPage />} />
           </Route>
         </Route>
       </Route>

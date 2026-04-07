@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Wind, Cylinder, Package, Truck,
   UserCheck, Building2, TrendingDown, BarChart3, Settings,
-  ChevronLeft, ChevronRight, LogOut, Flame, X, Menu,
+  ChevronLeft, ChevronRight, LogOut, Flame, X, Menu, MapPin, ArrowRightLeft,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import toast from 'react-hot-toast'
@@ -15,13 +15,15 @@ const navItems = [
   { to: '/cylinders', icon: Package, label: 'Cylinders', roles: ['superadmin', 'admin', 'user'] },
   { to: '/filling', icon: Wind, label: 'Filling', roles: ['superadmin', 'admin', 'user'] },
   { to: '/inventory', icon: Package, label: 'Inventory', roles: ['superadmin', 'admin', 'user'] },
+  { to: '/movements', icon: ArrowRightLeft, label: 'Movements', roles: ['superadmin', 'admin', 'user'] },
   { to: '/vehicles', icon: Truck, label: 'Vehicles', roles: ['superadmin', 'admin'] },
   { to: '/customers', icon: UserCheck, label: 'Customers', roles: ['superadmin', 'admin'] },
   { to: '/suppliers', icon: Building2, label: 'Suppliers', roles: ['superadmin', 'admin'] },
   { to: '/hr', icon: Users, label: 'HR', roles: ['superadmin', 'admin'] },
   { to: '/expenses', icon: TrendingDown, label: 'Expenses', roles: ['superadmin', 'admin'] },
-  { to: '/reports', icon: BarChart3, label: 'Reports', roles: ['superadmin', 'admin'] },
+  { to: '/reports', icon: BarChart3, label: 'Stock Report', roles: ['superadmin', 'admin'] },
   { to: '/settings', icon: Settings, label: 'Settings', roles: ['superadmin'] },
+  { to: '/areas', icon: MapPin, label: 'Areas', roles: ['superadmin'] },
 ]
 
 export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }) => {
@@ -64,16 +66,16 @@ export const Sidebar = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen }) 
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className={`flex items-center gap-3 px-4 py-5 border-b border-gray-200 dark:border-gray-700 ${collapsed && !mobileOpen ? 'justify-center' : ''}`}>
-        <div className="flex-shrink-0 w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-          <Package className="h-5 w-5 text-white" />
-        </div>
-        {(!collapsed || mobileOpen) && (
-          <div>
-            <p className="font-bold text-gray-900 dark:text-gray-100 text-sm leading-none">CTS</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Cylinder Tracker</p>
+          <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center font-bold text-white text-xs">
+            AT
           </div>
-        )}
-      </div>
+          {(!collapsed || mobileOpen) && (
+            <div>
+              <p className="font-bold text-gray-900 dark:text-gray-100 text-sm leading-none">Air Tech</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Cylinder System</p>
+            </div>
+          )}
+        </div>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">

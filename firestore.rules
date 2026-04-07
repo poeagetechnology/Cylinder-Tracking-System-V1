@@ -92,5 +92,33 @@ service cloud.firestore {
     match /expenses/{docId} {
       allow read, write: if isAdmin();
     }
+
+    // Purchases — admin+ can read/write
+    match /purchases/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Sales — admin+ can read/write
+    match /sales/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Areas — admin+ can read; superadmin can write
+    match /areas/{docId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // Weekly Wages — admin+ can read/write
+    match /weeklyWages/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Movements (Cylinder IN/OUT) — all approved users can read/create; admin+ can update/delete
+    match /movements/{docId} {
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
+    }
   }
 }
