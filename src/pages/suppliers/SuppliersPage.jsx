@@ -8,13 +8,14 @@ import { addDocument, updateDocument, deleteDocument } from '../../services/fire
 import { Table } from '../../components/ui/Table'
 import { Modal } from '../../components/ui/Modal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { FormField, Input, Textarea } from '../../components/ui/FormField'
+import { FormField, Input, Select, Textarea } from '../../components/ui/FormField'
 import { useTable } from '../../hooks/useTable'
 import { supplierSchema } from '../../utils/validations'
 import { fmtDate } from '../../utils/helpers'
 
 export const SuppliersPage = () => {
   const { data: suppliers, loading } = useFirestoreCollection('suppliers')
+  const { data: areas } = useFirestoreCollection('areas')
   const [modalOpen, setModalOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
@@ -22,15 +23,15 @@ export const SuppliersPage = () => {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: yupResolver(supplierSchema),
-    defaultValues: { name: '', contactPerson: '', phone: '', email: '', address: '' },
+    defaultValues: { name: '', contactPerson: '', gstNumber: '', phone: '', email: '', area: '', address: '' },
   })
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
     suppliers, ['name', 'contactPerson', 'phone'], 10
   )
 
-  const openAdd = () => { setEditItem(null); reset({ name: '', contactPerson: '', phone: '', email: '', address: '' }); setModalOpen(true) }
-  const openEdit = (item) => { setEditItem(item); reset({ name: item.name, contactPerson: item.contactPerson, phone: item.phone, email: item.email || '', address: item.address }); setModalOpen(true) }
+  const openAdd = () => { setEditItem(null); reset({ name: '', contactPerson: '', gstNumber: '', phone: '', email: '', area: '', address: '' }); setModalOpen(true) }
+  const openEdit = (item) => { setEditItem(item); reset({ name: item.name, contactPerson: item.contactPerson, gstNumber: item.gstNumber || '', phone: item.phone, email: item.email || '', area: item.area || '', address: item.address }); setModalOpen(true) }
 
   const onSubmit = async (data) => {
     setSaving(true)
@@ -51,6 +52,7 @@ export const SuppliersPage = () => {
     { key: 'name', label: 'Company Name', sortable: true },
     { key: 'contactPerson', label: 'Contact Person', sortable: true },
     { key: 'phone', label: 'Phone' },
+    { key: 'area', label: 'Area/Location' },
     { key: 'email', label: 'Email', render: (r) => r.email || '—' },
     { key: 'address', label: 'Address', render: (r) => <span className="truncate max-w-xs block">{r.address}</span> },
     { key: 'createdAt', label: 'Added', render: (r) => fmtDate(r.createdAt) },
@@ -76,10 +78,17 @@ export const SuppliersPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Supplier' : 'Add Supplier'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Company Name" error={errors.name?.message} required><Input register={register('name')} error={errors.name} placeholder="Company name" /></FormField>
-          <FormField label="Contact Person" error={errors.contactPerson?.message} required><Input register={register('contactPerson')} error={errors.contactPerson} placeholder="Contact person name" /></FormField>
-          <FormField label="Phone" error={errors.phone?.message} required><Input register={register('phone')} error={errors.phone} placeholder="10-digit number" /></FormField>
-          <FormField label="Email" error={errors.email?.message}><Input register={register('email')} error={errors.email} type="email" placeholder="Optional" /></FormField>
-          <FormField label="Address" error={errors.address?.message} required><Textarea register={register('address')} error={errors.address} placeholder="Full address" /></FormField>
+          <FormField label="Contact Person Name" error={errors.contactPerson?.message} required><Input register={register('contactPerson')} error={errors.contactPerson} placeholder="Contact person name" /></FormField>
+          <FormField label="GST Number" error={errors.gstNumber?.message}><Input register={register('gstNumber')} error={errors.gstNumber} placeholder="Optional" /></FormField>
+          <FormField label="Phone Number" error={errors.phone?.message} required><Input register={register('phone')} error={errors.phone} placeholder="10-digit number" /></FormField>
+          <FormField label="E Mail" error={errors.email?.message}><Input register={register('email')} error={errors.email} type="email" placeholder="Optional" /></FormField>
+          <FormField label="Area/Location" error={errors.area?.message} required>
+            <Select register={register('area')} error={errors.area}>
+              <option value="">Select area</option>
+              {areas?.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+            </Select>
+          </FormField>
+          <FormField label="Full Address" error={errors.address?.message} required><Textarea register={register('address')} error={errors.address} placeholder="Full address" /></FormField>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>

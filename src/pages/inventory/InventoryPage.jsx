@@ -4,7 +4,7 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { useAuth } from '../../context/AuthContext'
 import { addDocument } from '../../services/firestoreService'
-import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, ShoppingCart, TrendingUp, TrendingDown } from 'lucide-react'
+import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, ShoppingCart, TrendingUp, TrendingDown, Trash2, Search } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { Badge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
@@ -18,18 +18,57 @@ import { fmtDate, fmtCurrency } from '../../utils/helpers'
 const ALERT_THRESHOLD = 5
 
 const purchaseSchema = Yup.object({
-  cylinderId: Yup.string().required('Cylinder is required'),
-  quantity: Yup.number().positive().required('Quantity is required'),
-  supplier: Yup.string().required('Supplier is required'),
-  cost: Yup.number().positive().required('Cost is required'),
+  supplierName: Yup.string().required('Supplier name is required'),
+  date: Yup.string().required('Date is required'),
+  dcNumber: Yup.string().required('DC Number is required'),
+  cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
+    Yup.object({
+      cylinderId: Yup.string().required('Cylinder is required'),
+    })
+  ),
+  currentAmount: Yup.number().positive().required('Current amount is required'),
+  paidAmount: Yup.number().min(0).required('Paid amount is required'),
+  gst: Yup.number().min(0).max(100),
   notes: Yup.string(),
 })
 
 const saleSchema = Yup.object({
-  cylinderId: Yup.string().required('Cylinder is required'),
-  customer: Yup.string().required('Customer is required'),
-  quantity: Yup.number().positive().required('Quantity is required'),
-  amount: Yup.number().positive().required('Amount is required'),
+  customerName: Yup.string().required('Customer name is required'),
+  date: Yup.string().required('Date is required'),
+  dcNumber: Yup.string().required('DC Number is required'),
+  cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
+    Yup.object({
+      cylinderId: Yup.string().required('Cylinder is required'),
+    })
+  ),
+  currentAmount: Yup.number().positive().required('Current amount is required'),
+  paidAmount: Yup.number().min(0).required('Paid amount is required'),
+  gst: Yup.number().min(0).max(100),
+  notes: Yup.string(),
+})
+
+const emptyReturnSchema = Yup.object({
+  customerName: Yup.string().required('Customer name is required'),
+  date: Yup.string().required('Date is required'),
+  dcNumber: Yup.string().required('DC Number is required'),
+  cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
+    Yup.object({
+      cylinderId: Yup.string().required('Cylinder is required'),
+    })
+  ),
+  notes: Yup.string(),
+})
+
+const loadReturnSchema = Yup.object({
+  customerName: Yup.string().required('Customer name is required'),
+  date: Yup.string().required('Date is required'),
+  dcNumber: Yup.string().required('DC Number is required'),
+  cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
+    Yup.object({
+      cylinderId: Yup.string().required('Cylinder is required'),
+    })
+  ),
+  faultDescription: Yup.string().required('Fault description is required'),
   notes: Yup.string(),
 })
 
@@ -39,23 +78,84 @@ export const InventoryPage = () => {
   const { data: gasTypes } = useFirestoreCollection('gasTypes')
   const { data: purchases } = useFirestoreCollection('purchases')
   const { data: sales } = useFirestoreCollection('sales')
+  const { data: emptyReturns } = useFirestoreCollection('emptyReturns')
+  const { data: loadReturns } = useFirestoreCollection('loadReturns')
   const { data: customers } = useFirestoreCollection('customers')
   const { data: suppliers } = useFirestoreCollection('suppliers')
 
   const [tab, setTab] = useState('inventory')
   const [purchaseModal, setPurchaseModal] = useState(false)
   const [saleModal, setSaleModal] = useState(false)
+  const [emptyReturnModal, setEmptyReturnModal] = useState(false)
+  const [loadReturnModal, setLoadReturnModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [cylinderSearch, setCylinderSearch] = useState('')
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [customerSearch, setCustomerSearch] = useState('')
 
   const purchaseForm = useForm({
     resolver: yupResolver(purchaseSchema),
-    defaultValues: { cylinderId: '', quantity: '1', supplier: '', cost: '', notes: '' },
+    defaultValues: {
+      supplierName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      currentAmount: '',
+      paidAmount: '',
+      gst: '',
+      notes: '',
+    },
   })
 
   const saleForm = useForm({
     resolver: yupResolver(saleSchema),
-    defaultValues: { cylinderId: '', customer: '', quantity: '1', amount: '', notes: '' },
+    defaultValues: {
+      customerName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      currentAmount: '',
+      paidAmount: '',
+      gst: '',
+      notes: '',
+    },
   })
+
+  const emptyReturnForm = useForm({
+    resolver: yupResolver(emptyReturnSchema),
+    defaultValues: { 
+      customerName: '', 
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }], 
+      notes: '' 
+    },
+  })
+
+  const loadReturnForm = useForm({
+    resolver: yupResolver(loadReturnSchema),
+    defaultValues: { 
+      customerName: '', 
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }], 
+      faultDescription: '', 
+      notes: '' 
+    },
+  })
+
+  // Get filtered cylinders
+  const filteredCylindersForSearch = cylinderSearch
+    ? cylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase()))
+    : []
+
+  const filteredSuppliers = supplierSearch
+    ? suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase()))
+    : []
+
+  const filteredCustomers = customerSearch
+    ? customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+    : []
 
   // Group by gas type
   const inventoryByGas = gasTypes.map((gas) => {
@@ -76,13 +176,10 @@ export const InventoryPage = () => {
     inventoryByGas, ['gasName'], 10
   )
 
-  const { rows: purchaseRows, search: purchaseSearch, setSearch: setPurchaseSearch, sortKey: purchaseSortKey, sortDir: purchaseSortDir, handleSort: handlePurchaseSort, page: purchasePage, setPage: setPurchasePage, totalPages: purchaseTotalPages, totalRows: purchaseTotalRows } = useTable(
-    purchases, ['supplier', 'cylinderId'], 10
-  )
-
-  const { rows: saleRows, search: saleSearch, setSearch: setSaleSearch, sortKey: saleSortKey, sortDir: saleSortDir, handleSort: handleSaleSort, page: salePage, setPage: setSalePage, totalPages: saleTotalPages, totalRows: saleTotalRows } = useTable(
-    sales, ['customer', 'cylinderId'], 10
-  )
+  const { rows: purchaseRows } = useTable(purchases, ['supplierName', 'dcNumber'], 10)
+  const { rows: saleRows } = useTable(sales, ['customerName', 'dcNumber'], 10)
+  const { rows: emptyReturnRows } = useTable(emptyReturns, ['cylinderCode'], 10)
+  const { rows: loadReturnRows } = useTable(loadReturns, ['cylinderCode'], 10)
 
   const lowStockItems = inventoryByGas.filter((i) => i.alert && i.total > 0)
   const totalFull = cylinders.filter((c) => c.status === 'full').length
@@ -92,19 +189,51 @@ export const InventoryPage = () => {
   const onPurchaseSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylinder = cylinders.find(c => c.id === data.cylinderId)
+      const cylindersList = data.cylinders.map(c => {
+        const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
+        return {
+          cylinderId: cylinder?.id,
+          cylinderCode: cylinder?.cylinderCode || '',
+          gasType: cylinder?.gasTypeName || '',
+          capacity: cylinder?.capacity,
+        }
+      })
+
+      const balanceAmount = data.currentAmount - data.paidAmount
+      const gstAmount = (data.currentAmount * (data.gst || 0)) / 100
+
       await addDocument('purchases', {
-        ...data,
-        cylinderCode: cylinder?.cylinderCode || '',
-        gasType: cylinder?.gasTypeName || '',
-        quantity: parseInt(data.quantity),
-        cost: parseFloat(data.cost),
+        supplierName: data.supplierName,
+        date: data.date,
+        dcNumber: data.dcNumber,
+        cylinders: cylindersList,
+        currentAmount: parseFloat(data.currentAmount),
+        paidAmount: parseFloat(data.paidAmount),
+        balanceAmount: balanceAmount,
+        gst: data.gst || 0,
+        gstAmount: gstAmount,
+        totalAmount: parseFloat(data.currentAmount) + gstAmount,
+        notes: data.notes,
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
       })
+
+      // Record OUT movement for cylinders
+      cylindersList.forEach(async (c) => {
+        await addDocument('movements', {
+          cylinderId: c.cylinderId,
+          cylinderCode: c.cylinderCode,
+          type: 'OUT',
+          reason: `Purchase - ${data.supplierName}`,
+          reference: data.dcNumber,
+          recordedBy: userProfile?.name || 'System',
+          createdAt: new Date().toISOString(),
+        })
+      })
+
       toast.success('Purchase recorded')
       setPurchaseModal(false)
-      purchaseForm.reset()
+      purchaseForm.reset({ ...purchaseForm.formState.defaultValues })
     } catch (err) {
       toast.error('Failed to record purchase: ' + err.message)
     } finally {
@@ -115,24 +244,151 @@ export const InventoryPage = () => {
   const onSaleSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylinder = cylinders.find(c => c.id === data.cylinderId)
+      const cylindersList = data.cylinders.map(c => {
+        const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
+        return {
+          cylinderId: cylinder?.id,
+          cylinderCode: cylinder?.cylinderCode || '',
+          gasType: cylinder?.gasTypeName || '',
+          capacity: cylinder?.capacity,
+          status: cylinder?.status,
+        }
+      })
+
+      // Check if all cylinders are full
+      const allFull = cylindersList.every(c => c.status === 'full')
+      if (!allFull) {
+        toast.error('Sales can only be done with Full (Load) cylinders')
+        setSaving(false)
+        return
+      }
+
+      const balanceAmount = data.currentAmount - data.paidAmount
+      const gstAmount = (data.currentAmount * (data.gst || 0)) / 100
+
       await addDocument('sales', {
-        ...data,
-        cylinderCode: cylinder?.cylinderCode || '',
-        gasType: cylinder?.gasTypeName || '',
-        quantity: parseInt(data.quantity),
-        amount: parseFloat(data.amount),
+        customerName: data.customerName,
+        date: data.date,
+        dcNumber: data.dcNumber,
+        cylinders: cylindersList,
+        currentAmount: parseFloat(data.currentAmount),
+        paidAmount: parseFloat(data.paidAmount),
+        balanceAmount: balanceAmount,
+        gst: data.gst || 0,
+        gstAmount: gstAmount,
+        totalAmount: parseFloat(data.currentAmount) + gstAmount,
+        notes: data.notes,
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
       })
+
+      // Record OUT movement for cylinders
+      cylindersList.forEach(async (c) => {
+        await addDocument('movements', {
+          cylinderId: c.cylinderId,
+          cylinderCode: c.cylinderCode,
+          type: 'OUT',
+          reason: `Sales - ${data.customerName}`,
+          reference: data.dcNumber,
+          recordedBy: userProfile?.name || 'System',
+          createdAt: new Date().toISOString(),
+        })
+      })
+
       toast.success('Sale recorded')
       setSaleModal(false)
-      saleForm.reset()
+      saleForm.reset({ ...saleForm.formState.defaultValues })
     } catch (err) {
       toast.error('Failed to record sale: ' + err.message)
     } finally {
       setSaving(false)
     }
+  }
+
+  const onEmptyReturnSubmit = async (data) => {
+    setSaving(true)
+    try {
+      const cylindersList = data.cylinders.map(c => {
+        const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
+        return {
+          cylinderId: cylinder?.id,
+          cylinderCode: cylinder?.cylinderCode || '',
+          gasType: cylinder?.gasTypeName || '',
+        }
+      })
+
+      await addDocument('emptyReturns', {
+        customerName: data.customerName,
+        date: data.date,
+        dcNumber: data.dcNumber,
+        cylinders: cylindersList,
+        notes: data.notes,
+        recordedBy: userProfile?.name || 'System',
+        createdAt: new Date().toISOString(),
+      })
+
+      // Record IN movement for each cylinder
+      cylindersList.forEach(async (c) => {
+        await addDocument('movements', {
+          cylinderId: c.cylinderId,
+          cylinderCode: c.cylinderCode,
+          type: 'IN',
+          reason: `Empty Return - ${data.customerName}`,
+          reference: data.dcNumber,
+          recordedBy: userProfile?.name || 'System',
+          createdAt: new Date().toISOString(),
+        })
+      })
+
+      toast.success('Empty cylinder return recorded')
+      setEmptyReturnModal(false)
+      emptyReturnForm.reset({ ...emptyReturnForm.formState.defaultValues })
+    } catch (err) {
+      toast.error('Failed to record empty return: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onLoadReturnSubmit = async (data) => {
+    setSaving(true)
+    try {
+      const cylindersList = data.cylinders.map(c => {
+        const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
+        return {
+          cylinderId: cylinder?.id,
+          cylinderCode: cylinder?.cylinderCode || '',
+          gasType: cylinder?.gasTypeName || '',
+          capacity: cylinder?.capacity,
+        }
+      })
+
+      await addDocument('loadReturns', {
+        customerName: data.customerName,
+        date: data.date,
+        dcNumber: data.dcNumber,
+        cylinders: cylindersList,
+        faultDescription: data.faultDescription,
+        notes: data.notes,
+        recordedBy: userProfile?.name || 'System',
+        createdAt: new Date().toISOString(),
+      })
+
+      toast.success('Load return (Fault cylinder) recorded')
+      setLoadReturnModal(false)
+      loadReturnForm.reset({ ...loadReturnForm.formState.defaultValues })
+    } catch (err) {
+      toast.error('Failed to record load return: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Get cylinders sold to a specific customer
+  const getCustomerCylinders = (customerName) => {
+    const customerSales = sales.filter(s => s.customerName === customerName)
+    const soldCylinderIds = customerSales.flatMap(s => s.cylinders.map(c => c.cylinderId))
+    return cylinders.filter(c => soldCylinderIds.includes(c.id))
   }
 
   const invColumns = [
@@ -152,22 +408,41 @@ export const InventoryPage = () => {
   ]
 
   const purchaseColumns = [
-    { key: 'cylinderCode', label: 'Cylinder', sortable: true },
-    { key: 'gasType', label: 'Gas Type' },
-    { key: 'supplier', label: 'Supplier', sortable: true },
-    { key: 'quantity', label: 'Qty' },
-    { key: 'cost', label: 'Cost (₹)', render: (row) => fmtCurrency(row.cost) },
-    { key: 'recordedBy', label: 'Recorded By' },
-    { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
+    { key: 'supplierName', label: 'Supplier', sortable: true },
+    { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
+    { key: 'dcNumber', label: 'DC Number' },
+    { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
+    { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
+    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
+    { key: 'gst', label: 'GST %' },
+    { key: 'recordedBy', label: 'By' },
   ]
 
   const saleColumns = [
-    { key: 'cylinderCode', label: 'Cylinder', sortable: true },
+    { key: 'customerName', label: 'Customer', sortable: true },
+    { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
+    { key: 'dcNumber', label: 'DC Number' },
+    { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
+    { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
+    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
+    { key: 'gst', label: 'GST %' },
+    { key: 'recordedBy', label: 'By' },
+  ]
+
+  const emptyReturnColumns = [
+    { key: 'cylinderCode', label: 'Cylinder Code' },
     { key: 'gasType', label: 'Gas Type' },
-    { key: 'customer', label: 'Customer', sortable: true },
-    { key: 'quantity', label: 'Qty' },
-    { key: 'amount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.amount) },
-    { key: 'recordedBy', label: 'Recorded By' },
+    { key: 'notes', label: 'Notes' },
+    { key: 'recordedBy', label: 'By' },
+    { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
+  ]
+
+  const loadReturnColumns = [
+    { key: 'cylinderCode', label: 'Cylinder Code' },
+    { key: 'gasType', label: 'Gas Type' },
+    { key: 'faultDescription', label: 'Fault Description' },
+    { key: 'notes', label: 'Notes' },
+    { key: 'recordedBy', label: 'By' },
     { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
   ]
 
@@ -175,26 +450,30 @@ export const InventoryPage = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Inventory Management</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Track cylinders, purchases, and sales</p>
+          <h1 className="page-title">Inventory</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage inventory, purchases, sales, and returns</p>
         </div>
         <div className="flex gap-2">
-          {tab === 'purchase' && <button onClick={() => setPurchaseModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Add Purchase</button>}
-          {tab === 'sale' && <button onClick={() => setSaleModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Add Sale</button>}
+          {tab === 'purchase' && <button onClick={() => setPurchaseModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Purchase</button>}
+          {tab === 'sales' && <button onClick={() => setSaleModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Sales</button>}
+          {tab === 'empty_return' && <button onClick={() => setEmptyReturnModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Return</button>}
+          {tab === 'load_return' && <button onClick={() => setLoadReturnModal(true)} className="btn-primary flex items-center gap-2"><Plus className="h-4 w-4" /> Return</button>}
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
         {[
           { key: 'inventory', label: 'Inventory', icon: Package },
           { key: 'purchase', label: 'Purchase', icon: TrendingDown },
-          { key: 'sale', label: 'Sale', icon: TrendingUp },
+          { key: 'sales', label: 'Sales', icon: TrendingUp },
+          { key: 'empty_return', label: 'Empty Return', icon: XCircle },
+          { key: 'load_return', label: 'Load Return', icon: AlertTriangle },
         ].map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
               tab === t.key
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -257,100 +536,583 @@ export const InventoryPage = () => {
           <Table
             columns={purchaseColumns}
             rows={purchaseRows}
-            search={purchaseSearch}
-            onSearch={setPurchaseSearch}
-            sortKey={purchaseSortKey}
-            sortDir={purchaseSortDir}
-            onSort={handlePurchaseSort}
-            page={purchasePage}
-            totalPages={purchaseTotalPages}
-            totalRows={purchaseTotalRows}
-            onPageChange={setPurchasePage}
             searchPlaceholder="Search purchases..."
             emptyMessage="No purchase records found"
           />
         </div>
       )}
 
-      {tab === 'sale' && (
+      {tab === 'sales' && (
         <div className="card">
           <Table
             columns={saleColumns}
             rows={saleRows}
-            search={saleSearch}
-            onSearch={setSaleSearch}
-            sortKey={saleSortKey}
-            sortDir={saleSortDir}
-            onSort={handleSaleSort}
-            page={salePage}
-            totalPages={saleTotalPages}
-            totalRows={saleTotalRows}
-            onPageChange={setSalePage}
             searchPlaceholder="Search sales..."
             emptyMessage="No sales records found"
           />
         </div>
       )}
 
+      {tab === 'empty_return' && (
+        <div className="card">
+          <Table
+            columns={emptyReturnColumns}
+            rows={emptyReturnRows}
+            searchPlaceholder="Search returns..."
+            emptyMessage="No empty returns recorded"
+          />
+        </div>
+      )}
+
+      {tab === 'load_return' && (
+        <div className="card">
+          <Table
+            columns={loadReturnColumns}
+            rows={loadReturnRows}
+            searchPlaceholder="Search load returns..."
+            emptyMessage="No load returns recorded"
+          />
+        </div>
+      )}
+
       {/* Purchase Modal */}
-      <Modal isOpen={purchaseModal} onClose={() => setPurchaseModal(false)} title="Add Purchase">
-        <form onSubmit={purchaseForm.handleSubmit(onPurchaseSubmit)} className="space-y-4">
-          <FormField label="Cylinder" error={purchaseForm.formState.errors.cylinderId?.message} required>
-            <Select register={purchaseForm.register('cylinderId')} error={purchaseForm.formState.errors.cylinderId}>
-              <option value="">Select cylinder</option>
-              {cylinders.map(c => <option key={c.id} value={c.id}>{c.cylinderCode} - {c.gasTypeName}</option>)}
-            </Select>
+      <Modal isOpen={purchaseModal} onClose={() => { setPurchaseModal(false); setCylinderSearch(''); setSupplierSearch(''); }} title="Purchase">
+        <form onSubmit={purchaseForm.handleSubmit(onPurchaseSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Supplier Search */}
+          <FormField label="Supplier Name" error={purchaseForm.formState.errors.supplierName?.message} required>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search supplier..."
+                value={supplierSearch}
+                onChange={(e) => setSupplierSearch(e.target.value)}
+                className="input-field pl-10"
+              />
+              {supplierSearch && filteredSuppliers.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                  {filteredSuppliers.map(s => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        purchaseForm.setValue('supplierName', s.name)
+                        setSupplierSearch('')
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input {...purchaseForm.register('supplierName')} type="hidden" />
           </FormField>
-          <FormField label="Supplier" error={purchaseForm.formState.errors.supplier?.message} required>
-            <Input register={purchaseForm.register('supplier')} error={purchaseForm.formState.errors.supplier} placeholder="Supplier name" />
-          </FormField>
+
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Quantity" error={purchaseForm.formState.errors.quantity?.message} required>
-              <Input register={purchaseForm.register('quantity')} error={purchaseForm.formState.errors.quantity} type="number" min="1" placeholder="1" />
+            <FormField label="Date" error={purchaseForm.formState.errors.date?.message} required>
+              <Input register={purchaseForm.register('date')} error={purchaseForm.formState.errors.date} type="date" />
             </FormField>
-            <FormField label="Cost (₹)" error={purchaseForm.formState.errors.cost?.message} required>
-              <Input register={purchaseForm.register('cost')} error={purchaseForm.formState.errors.cost} type="number" min="0" step="0.01" placeholder="0.00" />
+            <FormField label="DC Number" error={purchaseForm.formState.errors.dcNumber?.message} required>
+              <Input register={purchaseForm.register('dcNumber')} error={purchaseForm.formState.errors.dcNumber} placeholder="DC Number" />
             </FormField>
           </div>
-          <FormField label="Notes">
-            <Input register={purchaseForm.register('notes')} placeholder="Optional notes" />
+
+          {/* Cylinders */}
+          <div>
+            <h3 className="font-semibold text-sm mb-2">Cylinders (Multiple)</h3>
+            {purchaseForm.watch('cylinders').map((_, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search cylinder..."
+                      value={cylinderSearch}
+                      onChange={(e) => setCylinderSearch(e.target.value)}
+                      className="input-field pl-10 w-full"
+                    />
+                    {cylinderSearch && filteredCylindersForSearch.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                        {filteredCylindersForSearch.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                              setCylinderSearch('')
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                          >
+                            {c.cylinderCode} — {c.gasTypeName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {purchaseForm.watch('cylinders').length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cyl = purchaseForm.watch('cylinders')
+                      purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const cyl = purchaseForm.watch('cylinders')
+                purchaseForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+            >
+              + Add Cylinder
+            </button>
+          </div>
+
+          {/* Payment */}
+          <div className="grid grid-cols-3 gap-2">
+            <FormField label="Amount (₹)" error={purchaseForm.formState.errors.currentAmount?.message} required>
+              <Input
+                register={purchaseForm.register('currentAmount')}
+                error={purchaseForm.formState.errors.currentAmount}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+            </FormField>
+            <FormField label="Paid (₹)" error={purchaseForm.formState.errors.paidAmount?.message} required>
+              <Input
+                register={purchaseForm.register('paidAmount')}
+                error={purchaseForm.formState.errors.paidAmount}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+            </FormField>
+            <FormField label="Balance (₹)">
+              <Input
+                value={
+                  purchaseForm.watch('currentAmount') && purchaseForm.watch('paidAmount')
+                    ? (parseFloat(purchaseForm.watch('currentAmount')) - parseFloat(purchaseForm.watch('paidAmount'))).toFixed(2)
+                    : '0.00'
+                }
+                disabled
+                type="number"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="GST %" error={purchaseForm.formState.errors.gst?.message}>
+            <Input register={purchaseForm.register('gst')} type="number" min="0" max="100" step="0.01" placeholder="0" />
           </FormField>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setPurchaseModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>
+
+          <FormField label="Notes">
+            <Textarea register={purchaseForm.register('notes')} placeholder="Optional notes" rows="2" />
+          </FormField>
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" onClick={() => { setPurchaseModal(false); setCylinderSearch(''); setSupplierSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Purchase'}</button>
           </div>
         </form>
       </Modal>
 
-      {/* Sale Modal */}
-      <Modal isOpen={saleModal} onClose={() => setSaleModal(false)} title="Add Sale">
-        <form onSubmit={saleForm.handleSubmit(onSaleSubmit)} className="space-y-4">
-          <FormField label="Cylinder" error={saleForm.formState.errors.cylinderId?.message} required>
-            <Select register={saleForm.register('cylinderId')} error={saleForm.formState.errors.cylinderId}>
-              <option value="">Select cylinder</option>
-              {cylinders.map(c => <option key={c.id} value={c.id}>{c.cylinderCode} - {c.gasTypeName}</option>)}
-            </Select>
+      {/* Sales Modal */}
+      <Modal isOpen={saleModal} onClose={() => { setSaleModal(false); setCylinderSearch(''); setCustomerSearch(''); }} title="Sales">
+        <form onSubmit={saleForm.handleSubmit(onSaleSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Customer Search */}
+          <FormField label="Customer Name" error={saleForm.formState.errors.customerName?.message} required>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search customer..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="input-field pl-10"
+              />
+              {customerSearch && filteredCustomers.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                  {filteredCustomers.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        saleForm.setValue('customerName', c.name)
+                        setCustomerSearch('')
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input {...saleForm.register('customerName')} type="hidden" />
           </FormField>
-          <FormField label="Customer" error={saleForm.formState.errors.customer?.message} required>
-            <Select register={saleForm.register('customer')} error={saleForm.formState.errors.customer}>
-              <option value="">Select customer or enter name</option>
-              {customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </Select>
-          </FormField>
+
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Quantity" error={saleForm.formState.errors.quantity?.message} required>
-              <Input register={saleForm.register('quantity')} error={saleForm.formState.errors.quantity} type="number" min="1" placeholder="1" />
+            <FormField label="Date" error={saleForm.formState.errors.date?.message} required>
+              <Input register={saleForm.register('date')} error={saleForm.formState.errors.date} type="date" />
             </FormField>
-            <FormField label="Amount (₹)" error={saleForm.formState.errors.amount?.message} required>
-              <Input register={saleForm.register('amount')} error={saleForm.formState.errors.amount} type="number" min="0" step="0.01" placeholder="0.00" />
+            <FormField label="DC Number" error={saleForm.formState.errors.dcNumber?.message} required>
+              <Input register={saleForm.register('dcNumber')} error={saleForm.formState.errors.dcNumber} placeholder="DC Number" />
             </FormField>
           </div>
-          <FormField label="Notes">
-            <Input register={saleForm.register('notes')} placeholder="Optional notes" />
+
+          {/* Cylinders - Full only */}
+          <div>
+            <h3 className="font-semibold text-sm mb-2">Cylinders - Full (Load) Only (Multiple)</h3>
+            {saleForm.watch('cylinders').map((_, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search cylinder..."
+                      value={cylinderSearch}
+                      onChange={(e) => setCylinderSearch(e.target.value)}
+                      className="input-field pl-10 w-full"
+                    />
+                    {cylinderSearch && filteredCylindersForSearch.filter(c => c.status === 'full').length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                        {filteredCylindersForSearch.filter(c => c.status === 'full').map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              saleForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                              setCylinderSearch('')
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                          >
+                            {c.cylinderCode} — {c.gasTypeName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {saleForm.watch('cylinders').length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cyl = saleForm.watch('cylinders')
+                      saleForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const cyl = saleForm.watch('cylinders')
+                saleForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+            >
+              + Add Cylinder
+            </button>
+          </div>
+
+          {/* Payment */}
+          <div className="grid grid-cols-3 gap-2">
+            <FormField label="Amount (₹)" error={saleForm.formState.errors.currentAmount?.message} required>
+              <Input
+                register={saleForm.register('currentAmount')}
+                error={saleForm.formState.errors.currentAmount}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+            </FormField>
+            <FormField label="Paid (₹)" error={saleForm.formState.errors.paidAmount?.message} required>
+              <Input
+                register={saleForm.register('paidAmount')}
+                error={saleForm.formState.errors.paidAmount}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+            </FormField>
+            <FormField label="Balance (₹)">
+              <Input
+                value={
+                  saleForm.watch('currentAmount') && saleForm.watch('paidAmount')
+                    ? (parseFloat(saleForm.watch('currentAmount')) - parseFloat(saleForm.watch('paidAmount'))).toFixed(2)
+                    : '0.00'
+                }
+                disabled
+                type="number"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="GST %" error={saleForm.formState.errors.gst?.message}>
+            <Input register={saleForm.register('gst')} type="number" min="0" max="100" step="0.01" placeholder="0" />
           </FormField>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setSaleModal(false)} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>
+
+          <FormField label="Notes">
+            <Textarea register={saleForm.register('notes')} placeholder="Optional notes" rows="2" />
+          </FormField>
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" onClick={() => { setSaleModal(false); setCylinderSearch(''); setCustomerSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Sale'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Empty Return Modal */}
+      <Modal isOpen={emptyReturnModal} onClose={() => { setEmptyReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} title="Empty Return">
+        <form onSubmit={emptyReturnForm.handleSubmit(onEmptyReturnSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Customer Search */}
+          <FormField label="Customer Name" error={emptyReturnForm.formState.errors.customerName?.message} required>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search customer..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="input-field pl-10"
+              />
+              {customerSearch && filteredCustomers.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                  {filteredCustomers.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        emptyReturnForm.setValue('customerName', c.name)
+                        setCustomerSearch('')
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input {...emptyReturnForm.register('customerName')} type="hidden" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Date" error={emptyReturnForm.formState.errors.date?.message} required>
+              <Input register={emptyReturnForm.register('date')} error={emptyReturnForm.formState.errors.date} type="date" />
+            </FormField>
+            <FormField label="DC Number" error={emptyReturnForm.formState.errors.dcNumber?.message} required>
+              <Input register={emptyReturnForm.register('dcNumber')} error={emptyReturnForm.formState.errors.dcNumber} placeholder="DC Number" />
+            </FormField>
+          </div>
+
+          {/* Cylinders - Customer wise only */}
+          <div>
+            <h3 className="font-semibold text-sm mb-2">Cylinders (Customer wise sales cylinders only) (Multiple)</h3>
+            {emptyReturnForm.watch('cylinders')?.map((_, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search cylinder..."
+                      value={cylinderSearch}
+                      onChange={(e) => setCylinderSearch(e.target.value)}
+                      className="input-field pl-10 w-full"
+                    />
+                    {cylinderSearch && emptyReturnForm.watch('customerName') && getCustomerCylinders(emptyReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                        {getCustomerCylinders(emptyReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              emptyReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                              setCylinderSearch('')
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                          >
+                            {c.cylinderCode} — {c.gasTypeName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {emptyReturnForm.watch('cylinders').length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cyl = emptyReturnForm.watch('cylinders')
+                      emptyReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const cyl = emptyReturnForm.watch('cylinders')
+                emptyReturnForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+            >
+              + Add Cylinder
+            </button>
+          </div>
+
+          <FormField label="Notes">
+            <Textarea register={emptyReturnForm.register('notes')} placeholder="Optional notes" rows="2" />
+          </FormField>
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" onClick={() => { setEmptyReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Record Return'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Load Return Modal */}
+      <Modal isOpen={loadReturnModal} onClose={() => { setLoadReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} title="Load Return (Fault Cylinder)">
+        <form onSubmit={loadReturnForm.handleSubmit(onLoadReturnSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Customer Search */}
+          <FormField label="Customer" error={loadReturnForm.formState.errors.customerName?.message} required>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search customer..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="input-field pl-10"
+              />
+              {customerSearch && filteredCustomers.length > 0 && (
+                <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                  {filteredCustomers.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        loadReturnForm.setValue('customerName', c.name)
+                        setCustomerSearch('')
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input {...loadReturnForm.register('customerName')} type="hidden" />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Date" error={loadReturnForm.formState.errors.date?.message} required>
+              <Input register={loadReturnForm.register('date')} error={loadReturnForm.formState.errors.date} type="date" />
+            </FormField>
+            <FormField label="DC Number" error={loadReturnForm.formState.errors.dcNumber?.message} required>
+              <Input register={loadReturnForm.register('dcNumber')} error={loadReturnForm.formState.errors.dcNumber} placeholder="DC Number" />
+            </FormField>
+          </div>
+
+          {/* Cylinders - Customer wise only */}
+          <div>
+            <h3 className="font-semibold text-sm mb-2">Cylinders (Customer wise sales cylinders only) (Multiple)</h3>
+            {loadReturnForm.watch('cylinders')?.map((_, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search cylinder..."
+                      value={cylinderSearch}
+                      onChange={(e) => setCylinderSearch(e.target.value)}
+                      className="input-field pl-10 w-full"
+                    />
+                    {cylinderSearch && loadReturnForm.watch('customerName') && getCustomerCylinders(loadReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                        {getCustomerCylinders(loadReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              loadReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                              setCylinderSearch('')
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                          >
+                            {c.cylinderCode} — {c.gasTypeName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {loadReturnForm.watch('cylinders').length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cyl = loadReturnForm.watch('cylinders')
+                      loadReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const cyl = loadReturnForm.watch('cylinders')
+                loadReturnForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+            >
+              + Add Cylinder
+            </button>
+          </div>
+
+          <FormField label="Fault Description" error={loadReturnForm.formState.errors.faultDescription?.message} required>
+            <Textarea register={loadReturnForm.register('faultDescription')} placeholder="Describe the fault..." rows="3" />
+          </FormField>
+
+          <FormField label="Notes">
+            <Textarea register={loadReturnForm.register('notes')} placeholder="Optional notes" rows="2" />
+          </FormField>
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" onClick={() => { setLoadReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Record Return'}</button>
           </div>
         </form>
       </Modal>

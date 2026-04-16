@@ -120,5 +120,15 @@ service cloud.firestore {
       allow create: if isApproved();
       allow update, delete: if isAdmin();
     }
+
+    // Empty Returns (Customer returns empty cylinders) — admin+ can read/write
+    match /emptyReturns/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Load Returns (Fault cylinder returns) — admin+ can read/write
+    match /loadReturns/{docId} {
+      allow read, write: if isAdmin();
+    }
   }
 }

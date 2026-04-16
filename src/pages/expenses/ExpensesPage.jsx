@@ -23,9 +23,9 @@ export const ExpensesPage = () => {
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm({
     resolver: yupResolver(expenseSchema),
-    defaultValues: { category: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] },
+    defaultValues: { category: '', date: new Date().toISOString().split('T')[0], billNumber: '', amount: '', taxAmount: '0', description: '' },
   })
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
@@ -35,30 +35,43 @@ export const ExpensesPage = () => {
   // Chart data - expenses by category
   const chartData = CATEGORIES.map(cat => ({
     category: cat,
-    amount: expenses.filter(e => e.category === cat).reduce((sum, e) => sum + (e.amount || 0), 0),
+    amount: expenses.filter(e => e.category === cat).reduce((sum, e) => sum + ((e.totalAmount || e.amount) || 0), 0),
   })).filter(d => d.amount > 0)
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
+  const totalExpenses = expenses.reduce((sum, e) => sum + ((e.totalAmount || e.amount) || 0), 0)
   const thisMonth = expenses
     .filter(e => e.date?.startsWith(new Date().toISOString().slice(0, 7)))
-    .reduce((sum, e) => sum + (e.amount || 0), 0)
+    .reduce((sum, e) => sum + ((e.totalAmount || e.amount) || 0), 0)
 
   const openAdd = () => {
     setEditItem(null)
-    reset({ category: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] })
+    reset({ category: '', date: new Date().toISOString().split('T')[0], billNumber: '', amount: '', taxAmount: '0', description: '' })
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditItem(item)
-    reset({ category: item.category, amount: item.amount, description: item.description, date: item.date })
+    reset({ category: item.category, date: item.date, billNumber: item.billNumber || '', amount: item.amount, taxAmount: item.taxAmount || 0, description: item.description })
     setModalOpen(true)
   }
 
   const onSubmit = async (data) => {
     setSaving(true)
     try {
-      const payload = { ...data, amount: Number(data.amount) }
+      const amount = Number(data.amount)
+      const taxAmount = Number(data.taxAmount)
+      const totalAmount = amount + taxAmount
+      
+      const payload = { 
+        category: data.category,
+        date: data.date,
+        billNumber: data.billNumber,
+        amount: amount,
+        taxAmount: taxAmount,
+        totalAmount: totalAmount,
+        description: data.description,
+      }
+      
       if (editItem) {
         await updateDocument('expenses', editItem.id, payload)
         toast.success('Expense updated')
@@ -85,11 +98,14 @@ export const ExpensesPage = () => {
 
   const columns = [
     { key: 'date', label: 'Date', sortable: true },
+    { key: 'billNumber', label: 'Bill Number', sortable: true },
     { key: 'category', label: 'Category', sortable: true, render: r => (
       <span className="badge-blue">{r.category}</span>
     )},
     { key: 'description', label: 'Description' },
     { key: 'amount', label: 'Amount', sortable: true, render: r => <span className="font-semibold text-red-600">{fmtCurrency(r.amount)}</span> },
+    { key: 'taxAmount', label: 'Tax', render: r => <span className="font-semibold text-orange-600">{fmtCurrency(r.taxAmount || 0)}</span> },
+    { key: 'totalAmount', label: 'Total', sortable: true, render: r => <span className="font-semibold text-red-700">{fmtCurrency((r.totalAmount || r.amount) || 0)}</span> },
     {
       key: 'actions', label: 'Actions', render: row => (
         <div className="flex items-center gap-2">
@@ -179,13 +195,28 @@ export const ExpensesPage = () => {
             </Select>
           </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Amount (₹)" error={errors.amount?.message} required>
-              <Input register={register('amount', { valueAsNumber: true })} error={errors.amount} type="number" placeholder="Amount" />
-            </FormField>
             <FormField label="Date" error={errors.date?.message} required>
               <Input register={register('date')} error={errors.date} type="date" />
             </FormField>
+            <FormField label="Bill Number" error={errors.billNumber?.message} required>
+              <Input register={register('billNumber')} error={errors.billNumber} placeholder="Bill number" />
+            </FormField>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Amount (₹)" error={errors.amount?.message} required>
+              <Input register={register('amount', { valueAsNumber: true })} error={errors.amount} type="number" placeholder="Amount" />
+            </FormField>
+            <FormField label="Tax Amount (₹)" error={errors.taxAmount?.message} required>
+              <Input register={register('taxAmount', { valueAsNumber: true })} error={errors.taxAmount} type="number" placeholder="Tax amount" />
+            </FormField>
+          </div>
+          {(watch('amount') || watch('taxAmount')) && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                <span className="font-semibold">Total Amount:</span> ₹{fmtCurrency((Number(watch('amount')) || 0) + (Number(watch('taxAmount')) || 0))}
+              </p>
+            </div>
+          )}
           <FormField label="Description" error={errors.description?.message} required>
             <Textarea register={register('description')} error={errors.description} placeholder="Describe this expense" />
           </FormField>

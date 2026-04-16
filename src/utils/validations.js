@@ -43,19 +43,28 @@ export const cylinderSchema = Yup.object({
 })
 
 export const customerSchema = Yup.object({
-  name: Yup.string().required('Name is required'),
+  name: Yup.string().required('Full Name is required'),
+  gstNumber: Yup.string().nullable(),
   phone: Yup.string().matches(/^\d{10}$/, 'Invalid phone number').required('Phone is required'),
   email: Yup.string().email('Invalid email').nullable(),
-  address: Yup.string().required('Address is required'),
   area: Yup.string().required('Area/Location is required'),
+  address: Yup.string().required('Full Address is required'),
+  gasTypeWiseRate: Yup.array().of(
+    Yup.object({
+      gasTypeId: Yup.string().required('Gas type is required'),
+      rate: Yup.number().positive().required('Rate is required'),
+    })
+  ).nullable(),
 })
 
 export const supplierSchema = Yup.object({
-  name: Yup.string().required('Name is required'),
-  contactPerson: Yup.string().required('Contact person is required'),
-  phone: Yup.string().matches(/^\d{10}$/, 'Invalid phone number').required('Phone is required'),
+  name: Yup.string().required('Company Name is required'),
+  contactPerson: Yup.string().required('Contact Person Name is required'),
+  gstNumber: Yup.string().nullable(),
+  phone: Yup.string().matches(/^\d{10}$/, 'Invalid phone number').required('Phone Number is required'),
   email: Yup.string().email('Invalid email').nullable(),
-  address: Yup.string().required('Address is required'),
+  area: Yup.string().required('Area/Location is required'),
+  address: Yup.string().required('Full Address is required'),
 })
 
 export const vehicleSchema = Yup.object({
@@ -67,7 +76,9 @@ export const vehicleSchema = Yup.object({
 
 export const expenseSchema = Yup.object({
   category: Yup.string().required('Category is required'),
-  amount: Yup.number().positive().required('Amount is required'),
-  description: Yup.string().required('Description is required'),
   date: Yup.string().required('Date is required'),
+  billNumber: Yup.string().required('Bill Number is required'),
+  amount: Yup.number().positive('Must be positive').required('Amount is required'),
+  taxAmount: Yup.number().min(0, 'Tax cannot be negative').required('Tax Amount is required'),
+  description: Yup.string().required('Description is required'),
 })

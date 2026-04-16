@@ -58,11 +58,30 @@ export const CylindersPage = () => {
     setModalOpen(true)
   }
 
+  const getCapacityUnit = (gasName) => {
+    const cubicGases = ['Oxygen', 'Argon', 'Nitrogen']
+    return cubicGases.some(g => gasName?.toLowerCase().includes(g.toLowerCase())) ? 'cubic' : 'kg'
+  }
+
   const onSubmit = async (data) => {
     setSaving(true)
     try {
       const gasType = gasTypes.find((g) => g.id === data.gasTypeId)
-      const payload = { ...data, gasTypeName: gasType?.gasName || '' }
+      
+      // Check for duplicate cylinder code (excluding current edit item)
+      const isDuplicate = cylinders.some(c => 
+        c.cylinderCode.toLowerCase() === data.cylinderCode.toLowerCase() && 
+        c.id !== editItem?.id
+      )
+      
+      if (isDuplicate) {
+        toast.error('Cylinder code already exists. Please use a different code.')
+        setSaving(false)
+        return
+      }
+
+      const capacityUnit = getCapacityUnit(gasType?.gasName)
+      const payload = { ...data, gasTypeName: gasType?.gasName || '', capacityUnit }
       
       if (editItem) {
         await updateDocument('cylinders', editItem.id, payload)
@@ -111,7 +130,7 @@ export const CylindersPage = () => {
   const columns = [
     { key: 'cylinderCode', label: 'Code', sortable: true },
     { key: 'gasTypeName', label: 'Gas Type', sortable: true },
-    { key: 'capacity', label: 'Capacity', render: (row) => `${row.capacity} kg` },
+    { key: 'capacity', label: 'Capacity', render: (row) => `${row.capacity} ${row.capacityUnit || getCapacityUnit(row.gasTypeName)}` },
     { key: 'client', label: 'Client', sortable: true },
     { key: 'status', label: 'Status', render: (row) => <Badge status={row.status} label={row.status?.replace('_', ' ')} /> },
     { key: 'location', label: 'Location', sortable: true },
@@ -269,7 +288,7 @@ export const CylindersPage = () => {
             </Select>
           </FormField>
 
-          <FormField label="Capacity (kg)" error={errors.capacity?.message} required>
+          <FormField label={`Capacity (${selectedGas ? getCapacityUnit(selectedGas.gasName) : 'unit'})`} error={errors.capacity?.message} required>
             <Select register={register('capacity', { valueAsNumber: true })} error={errors.capacity}>
               <option value="">Select capacity</option>
               {(selectedGas?.capacities || []).map((c, i) => {

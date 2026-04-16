@@ -85,5 +85,40 @@ export const exportToCSV = (data, filename = 'export') => {
   URL.revokeObjectURL(url)
 }
 
+// Excel export
+export const exportToExcel = async (data, filename = 'export', sheetName = 'Sheet1') => {
+  try {
+    const XLSX = await import('xlsx')
+    if (!data.length) return
+
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+
+    // Set column widths
+    const colWidths = Object.keys(data[0]).map((key) => ({
+      wch: Math.max(key.length, 12),
+    }))
+    worksheet['!cols'] = colWidths
+
+    // Style header row
+    const range = XLSX.utils.decode_range(worksheet['!ref'])
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_col(C) + '1'
+      if (!worksheet[address]) continue
+      worksheet[address].s = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '4F46E5' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      }
+    }
+
+    XLSX.writeFile(workbook, `${filename}-${format(new Date(), 'yyyy-MM-dd')}.xlsx`)
+  } catch (error) {
+    console.error('Error exporting to Excel:', error)
+    alert('Failed to export to Excel. Please install xlsx package: npm install xlsx')
+  }
+}
+
 // Generate ID
 export const genId = () => Math.random().toString(36).substr(2, 9)

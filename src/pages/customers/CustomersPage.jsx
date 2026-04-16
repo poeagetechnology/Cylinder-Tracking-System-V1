@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
-import { Plus, Edit2, Trash2, UserCheck } from 'lucide-react'
+import { Plus, Edit2, Trash2, UserCheck, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { addDocument, updateDocument, deleteDocument } from '../../services/firestoreService'
@@ -16,14 +16,28 @@ import { fmtDate } from '../../utils/helpers'
 export const CustomersPage = () => {
   const { data: customers, loading } = useFirestoreCollection('customers')
   const { data: areas } = useFirestoreCollection('areas')
+  const { data: gasTypes } = useFirestoreCollection('gasTypes')
   const [modalOpen, setModalOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, watch, formState: { errors }, control } = useForm({
     resolver: yupResolver(customerSchema),
-    defaultValues: { name: '', phone: '', email: '', address: '', area: '' },
+    defaultValues: { 
+      name: '', 
+      gstNumber: '',
+      phone: '', 
+      email: '', 
+      address: '', 
+      area: '',
+      gasTypeWiseRate: []
+    },
+  })
+
+  const { fields: rateFields, append: appendRate, remove: removeRate } = useFieldArray({
+    control,
+    name: 'gasTypeWiseRate'
   })
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
@@ -32,24 +46,50 @@ export const CustomersPage = () => {
 
   const openAdd = () => {
     setEditItem(null)
-    reset({ name: '', phone: '', email: '', address: '', area: '' })
+    reset({ 
+      name: '', 
+      gstNumber: '',
+      phone: '', 
+      email: '', 
+      address: '', 
+      area: '',
+      gasTypeWiseRate: []
+    })
     setModalOpen(true)
   }
 
   const openEdit = (item) => {
     setEditItem(item)
-    reset({ name: item.name, phone: item.phone, email: item.email || '', address: item.address, area: item.area || '' })
+    reset({ 
+      name: item.name, 
+      gstNumber: item.gstNumber || '',
+      phone: item.phone, 
+      email: item.email || '', 
+      address: item.address, 
+      area: item.area || '',
+      gasTypeWiseRate: item.gasTypeWiseRate || []
+    })
     setModalOpen(true)
   }
 
   const onSubmit = async (data) => {
     setSaving(true)
     try {
+      const payload = {
+        name: data.name,
+        gstNumber: data.gstNumber || '',
+        phone: data.phone,
+        email: data.email || '',
+        address: data.address,
+        area: data.area,
+        gasTypeWiseRate: data.gasTypeWiseRate?.length > 0 ? data.gasTypeWiseRate : [],
+      }
+
       if (editItem) {
-        await updateDocument('customers', editItem.id, data)
+        await updateDocument('customers', editItem.id, payload)
         toast.success('Customer updated')
       } else {
-        await addDocument('customers', data)
+        await addDocument('customers', { ...payload, createdAt: new Date().toISOString() })
         toast.success('Customer added')
       }
       setModalOpen(false)
@@ -123,26 +163,77 @@ export const CustomersPage = () => {
       </div>
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Customer' : 'Add Customer'}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
           <FormField label="Full Name" error={errors.name?.message} required>
-            <Input register={register('name')} error={errors.name} placeholder="Customer name" />
+            <Input register={register('name')} error={errors.name} placeholder="Customer full name" />
           </FormField>
-          <FormField label="Phone" error={errors.phone?.message} required>
+
+          <FormField label="GST Number" error={errors.gstNumber?.message}>
+            <Input register={register('gstNumber')} error={errors.gstNumber} placeholder="Optional GST number" />
+          </FormField>
+
+          <FormField label="Phone Number" error={errors.phone?.message} required>
             <Input register={register('phone')} error={errors.phone} placeholder="10-digit mobile number" />
           </FormField>
-          <FormField label="Email" error={errors.email?.message}>
+
+          <FormField label="E Mail" error={errors.email?.message}>
             <Input register={register('email')} error={errors.email} type="email" placeholder="Optional email" />
           </FormField>
+
           <FormField label="Area/Location" error={errors.area?.message} required>
             <Select register={register('area')} error={errors.area}>
               <option value="">Select area</option>
               {areas.map(a => <option key={a.id} value={a.areaName}>{a.areaName}</option>)}
             </Select>
           </FormField>
-          <FormField label="Address" error={errors.address?.message} required>
-            <Textarea register={register('address')} error={errors.address} placeholder="Full address" />
+
+          {/* Gas Type Wise Rate */}
+          <div className="border-t pt-4">
+            <h3 className="font-semibold text-sm mb-3">Gas Type Wise Rate (Fixed Amount)</h3>
+            <div className="space-y-2 mb-3">
+              {rateFields.map((field, idx) => (
+                <div key={field.id} className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Select register={register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
+                      <option value="">Select gas type</option>
+                      {gasTypes.map(g => (
+                        <option key={g.id} value={g.id}>{g.gasName}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="w-24">
+                    <Input
+                      register={register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Rate"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRate(idx)}
+                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => appendRate({ gasTypeId: '', rate: '' })}
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+            >
+              + Add Gas Type Rate
+            </button>
+          </div>
+
+          <FormField label="Full Address" error={errors.address?.message} required>
+            <Textarea register={register('address')} error={errors.address} placeholder="Complete address" rows="2" />
           </FormField>
-          <div className="flex justify-end gap-3 pt-2">
+
+          <div className="flex justify-end gap-3 pt-2 border-t">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>
           </div>
