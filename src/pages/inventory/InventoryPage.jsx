@@ -23,12 +23,12 @@ const purchaseSchema = Yup.object({
   dcNumber: Yup.string().required('DC Number is required'),
   cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
     Yup.object({
-      cylinderId: Yup.string().required('Cylinder is required'),
+      cylinderId: Yup.string(),
     })
   ),
-  currentAmount: Yup.number().positive().required('Current amount is required'),
-  paidAmount: Yup.number().min(0).required('Paid amount is required'),
-  gst: Yup.number().min(0).max(100),
+  currentAmount: Yup.number().typeError('Amount is required').positive('Amount must be positive').required('Current amount is required'),
+  paidAmount: Yup.number().typeError('Paid amount is required').min(0, 'Paid amount cannot be negative').required('Paid amount is required'),
+  gst: Yup.number().typeError('GST must be a number').min(0).max(100).nullable().optional(),
   notes: Yup.string(),
 })
 
@@ -38,12 +38,12 @@ const saleSchema = Yup.object({
   dcNumber: Yup.string().required('DC Number is required'),
   cylinders: Yup.array().min(1, 'Add at least one cylinder').of(
     Yup.object({
-      cylinderId: Yup.string().required('Cylinder is required'),
+      cylinderId: Yup.string(),
     })
   ),
-  currentAmount: Yup.number().positive().required('Current amount is required'),
-  paidAmount: Yup.number().min(0).required('Paid amount is required'),
-  gst: Yup.number().min(0).max(100),
+  currentAmount: Yup.number().typeError('Amount is required').positive('Amount must be positive').required('Current amount is required'),
+  paidAmount: Yup.number().typeError('Paid amount is required').min(0, 'Paid amount cannot be negative').required('Paid amount is required'),
+  gst: Yup.number().typeError('GST must be a number').min(0).max(100).nullable().optional(),
   notes: Yup.string(),
 })
 
@@ -102,7 +102,7 @@ export const InventoryPage = () => {
       cylinders: [{ cylinderId: '' }],
       currentAmount: '',
       paidAmount: '',
-      gst: '',
+      gst: 0,
       notes: '',
     },
   })
@@ -116,7 +116,7 @@ export const InventoryPage = () => {
       cylinders: [{ cylinderId: '' }],
       currentAmount: '',
       paidAmount: '',
-      gst: '',
+      gst: 0,
       notes: '',
     },
   })
@@ -178,8 +178,61 @@ export const InventoryPage = () => {
 
   const { rows: purchaseRows } = useTable(purchases, ['supplierName', 'dcNumber'], 10)
   const { rows: saleRows } = useTable(sales, ['customerName', 'dcNumber'], 10)
-  const { rows: emptyReturnRows } = useTable(emptyReturns, ['cylinderCode'], 10)
-  const { rows: loadReturnRows } = useTable(loadReturns, ['cylinderCode'], 10)
+  
+  // Flatten emptyReturns data - expand each return into multiple rows (one per cylinder)
+  const flattenedEmptyReturns = emptyReturns.flatMap(record =>
+    record.cylinders && record.cylinders.length > 0
+      ? record.cylinders.map(cyl => ({
+          id: `${record.id}-${cyl.cylinderId}`,
+          cylinderCode: cyl.cylinderCode || '',
+          gasType: cyl.gasType || '',
+          customerName: record.customerName,
+          dcNumber: record.dcNumber,
+          notes: record.notes,
+          recordedBy: record.recordedBy,
+          createdAt: record.createdAt,
+        }))
+      : [{
+          id: record.id,
+          cylinderCode: '',
+          gasType: '',
+          customerName: record.customerName,
+          dcNumber: record.dcNumber,
+          notes: record.notes,
+          recordedBy: record.recordedBy,
+          createdAt: record.createdAt,
+        }]
+  )
+
+  // Flatten loadReturns data - expand each return into multiple rows (one per cylinder)
+  const flattenedLoadReturns = loadReturns.flatMap(record =>
+    record.cylinders && record.cylinders.length > 0
+      ? record.cylinders.map(cyl => ({
+          id: `${record.id}-${cyl.cylinderId}`,
+          cylinderCode: cyl.cylinderCode || '',
+          gasType: cyl.gasType || '',
+          customerName: record.customerName,
+          dcNumber: record.dcNumber,
+          faultDescription: record.faultDescription,
+          notes: record.notes,
+          recordedBy: record.recordedBy,
+          createdAt: record.createdAt,
+        }))
+      : [{
+          id: record.id,
+          cylinderCode: '',
+          gasType: '',
+          customerName: record.customerName,
+          dcNumber: record.dcNumber,
+          faultDescription: record.faultDescription,
+          notes: record.notes,
+          recordedBy: record.recordedBy,
+          createdAt: record.createdAt,
+        }]
+  )
+
+  const { rows: emptyReturnRows } = useTable(flattenedEmptyReturns, ['cylinderCode'], 10)
+  const { rows: loadReturnRows } = useTable(flattenedLoadReturns, ['cylinderCode'], 10)
 
   const lowStockItems = inventoryByGas.filter((i) => i.alert && i.total > 0)
   const totalFull = cylinders.filter((c) => c.status === 'full').length
@@ -189,7 +242,15 @@ export const InventoryPage = () => {
   const onPurchaseSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylindersList = data.cylinders.map(c => {
+      // Filter out empty cylinder entries
+      const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
+      if (validCylinders.length === 0) {
+        toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      
+      const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
         return {
           cylinderId: cylinder?.id,
@@ -232,8 +293,7 @@ export const InventoryPage = () => {
       })
 
       toast.success('Purchase recorded')
-      setPurchaseModal(false)
-      purchaseForm.reset({ ...purchaseForm.formState.defaultValues })
+      resetPurchaseModal()
     } catch (err) {
       toast.error('Failed to record purchase: ' + err.message)
     } finally {
@@ -244,7 +304,15 @@ export const InventoryPage = () => {
   const onSaleSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylindersList = data.cylinders.map(c => {
+      // Filter out empty cylinder entries
+      const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
+      if (validCylinders.length === 0) {
+        toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      
+      const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
         return {
           cylinderId: cylinder?.id,
@@ -296,8 +364,7 @@ export const InventoryPage = () => {
       })
 
       toast.success('Sale recorded')
-      setSaleModal(false)
-      saleForm.reset({ ...saleForm.formState.defaultValues })
+      resetSaleModal()
     } catch (err) {
       toast.error('Failed to record sale: ' + err.message)
     } finally {
@@ -308,7 +375,15 @@ export const InventoryPage = () => {
   const onEmptyReturnSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylindersList = data.cylinders.map(c => {
+      // Filter out empty cylinder entries
+      const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
+      if (validCylinders.length === 0) {
+        toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      
+      const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
         return {
           cylinderId: cylinder?.id,
@@ -341,8 +416,7 @@ export const InventoryPage = () => {
       })
 
       toast.success('Empty cylinder return recorded')
-      setEmptyReturnModal(false)
-      emptyReturnForm.reset({ ...emptyReturnForm.formState.defaultValues })
+      resetEmptyReturnModal()
     } catch (err) {
       toast.error('Failed to record empty return: ' + err.message)
     } finally {
@@ -353,7 +427,15 @@ export const InventoryPage = () => {
   const onLoadReturnSubmit = async (data) => {
     setSaving(true)
     try {
-      const cylindersList = data.cylinders.map(c => {
+      // Filter out empty cylinder entries
+      const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
+      if (validCylinders.length === 0) {
+        toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      
+      const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
         return {
           cylinderId: cylinder?.id,
@@ -375,8 +457,7 @@ export const InventoryPage = () => {
       })
 
       toast.success('Load return (Fault cylinder) recorded')
-      setLoadReturnModal(false)
-      loadReturnForm.reset({ ...loadReturnForm.formState.defaultValues })
+      resetLoadReturnModal()
     } catch (err) {
       toast.error('Failed to record load return: ' + err.message)
     } finally {
@@ -389,6 +470,66 @@ export const InventoryPage = () => {
     const customerSales = sales.filter(s => s.customerName === customerName)
     const soldCylinderIds = customerSales.flatMap(s => s.cylinders.map(c => c.cylinderId))
     return cylinders.filter(c => soldCylinderIds.includes(c.id))
+  }
+
+  // Reset functions
+  const resetPurchaseModal = () => {
+    setPurchaseModal(false)
+    setCylinderSearch('')
+    setSupplierSearch('')
+    purchaseForm.reset({
+      supplierName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      currentAmount: '',
+      paidAmount: '',
+      gst: 0,
+      notes: '',
+    })
+  }
+
+  const resetSaleModal = () => {
+    setSaleModal(false)
+    setCylinderSearch('')
+    setCustomerSearch('')
+    saleForm.reset({
+      customerName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      currentAmount: '',
+      paidAmount: '',
+      gst: 0,
+      notes: '',
+    })
+  }
+
+  const resetEmptyReturnModal = () => {
+    setEmptyReturnModal(false)
+    setCustomerSearch('')
+    setCylinderSearch('')
+    emptyReturnForm.reset({
+      customerName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      notes: '',
+    })
+  }
+
+  const resetLoadReturnModal = () => {
+    setLoadReturnModal(false)
+    setCustomerSearch('')
+    setCylinderSearch('')
+    loadReturnForm.reset({
+      customerName: '',
+      date: new Date().toISOString().split('T')[0],
+      dcNumber: '',
+      cylinders: [{ cylinderId: '' }],
+      faultDescription: '',
+      notes: '',
+    })
   }
 
   const invColumns = [
@@ -576,7 +717,7 @@ export const InventoryPage = () => {
       )}
 
       {/* Purchase Modal */}
-      <Modal isOpen={purchaseModal} onClose={() => { setPurchaseModal(false); setCylinderSearch(''); setSupplierSearch(''); }} title="Purchase">
+      <Modal isOpen={purchaseModal} onClose={resetPurchaseModal} title="Purchase">
         <form onSubmit={purchaseForm.handleSubmit(onPurchaseSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
           {/* Supplier Search */}
           <FormField label="Supplier Name" error={purchaseForm.formState.errors.supplierName?.message} required>
@@ -584,12 +725,15 @@ export const InventoryPage = () => {
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search supplier..."
-                value={supplierSearch}
-                onChange={(e) => setSupplierSearch(e.target.value)}
+                placeholder="Search or type supplier name..."
+                value={purchaseForm.watch('supplierName') || supplierSearch}
+                onChange={(e) => {
+                  setSupplierSearch(e.target.value)
+                  if (!e.target.value) purchaseForm.setValue('supplierName', '')
+                }}
                 className="input-field pl-10"
               />
-              {supplierSearch && filteredSuppliers.length > 0 && (
+              {(supplierSearch || purchaseForm.watch('supplierName')) && filteredSuppliers.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
                   {filteredSuppliers.map(s => (
                     <button
@@ -599,15 +743,18 @@ export const InventoryPage = () => {
                         purchaseForm.setValue('supplierName', s.name)
                         setSupplierSearch('')
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className={`w-full text-left px-3 py-2 text-sm ${
+                        purchaseForm.watch('supplierName') === s.name
+                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
                     >
-                      {s.name}
+                      ✓ {s.name}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            <input {...purchaseForm.register('supplierName')} type="hidden" />
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
@@ -622,51 +769,57 @@ export const InventoryPage = () => {
           {/* Cylinders */}
           <div>
             <h3 className="font-semibold text-sm mb-2">Cylinders (Multiple)</h3>
-            {purchaseForm.watch('cylinders').map((_, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search cylinder..."
-                      value={cylinderSearch}
-                      onChange={(e) => setCylinderSearch(e.target.value)}
-                      className="input-field pl-10 w-full"
-                    />
-                    {cylinderSearch && filteredCylindersForSearch.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                        {filteredCylindersForSearch.map(c => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                              setCylinderSearch('')
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                          >
-                            {c.cylinderCode} — {c.gasTypeName}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+            {purchaseForm.watch('cylinders').map((cylinder, idx) => {
+              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
+              return (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search cylinder..."
+                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
+                        onChange={(e) => {
+                          setCylinderSearch(e.target.value)
+                          if (!e.target.value) purchaseForm.setValue(`cylinders.${idx}.cylinderId`, '')
+                        }}
+                        className="input-field pl-10 w-full"
+                      />
+                      {!selectedCylinder && (cylinderSearch || purchaseForm.watch(`cylinders.${idx}.cylinderId`)) && filteredCylindersForSearch.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                          {filteredCylindersForSearch.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                                setCylinderSearch('')
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                            >
+                              {c.cylinderCode} — {c.gasTypeName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {purchaseForm.watch('cylinders').length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cyl = purchaseForm.watch('cylinders')
+                        purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                {purchaseForm.watch('cylinders').length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cyl = purchaseForm.watch('cylinders')
-                      purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                    }}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
             <button
               type="button"
               onClick={() => {
@@ -723,14 +876,14 @@ export const InventoryPage = () => {
           </FormField>
 
           <div className="flex justify-end gap-3 pt-2 border-t">
-            <button type="button" onClick={() => { setPurchaseModal(false); setCylinderSearch(''); setSupplierSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={resetPurchaseModal} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Purchase'}</button>
           </div>
         </form>
       </Modal>
 
       {/* Sales Modal */}
-      <Modal isOpen={saleModal} onClose={() => { setSaleModal(false); setCylinderSearch(''); setCustomerSearch(''); }} title="Sales">
+      <Modal isOpen={saleModal} onClose={resetSaleModal} title="Sales">
         <form onSubmit={saleForm.handleSubmit(onSaleSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
           {/* Customer Search */}
           <FormField label="Customer Name" error={saleForm.formState.errors.customerName?.message} required>
@@ -738,12 +891,15 @@ export const InventoryPage = () => {
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search customer..."
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
+                placeholder="Search or type customer name..."
+                value={saleForm.watch('customerName') || customerSearch}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value)
+                  if (!e.target.value) saleForm.setValue('customerName', '')
+                }}
                 className="input-field pl-10"
               />
-              {customerSearch && filteredCustomers.length > 0 && (
+              {(customerSearch || saleForm.watch('customerName')) && filteredCustomers.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
                   {filteredCustomers.map(c => (
                     <button
@@ -753,15 +909,18 @@ export const InventoryPage = () => {
                         saleForm.setValue('customerName', c.name)
                         setCustomerSearch('')
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className={`w-full text-left px-3 py-2 text-sm ${
+                        saleForm.watch('customerName') === c.name
+                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
                     >
-                      {c.name}
+                      ✓ {c.name}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            <input {...saleForm.register('customerName')} type="hidden" />
           </FormField>
 
           <div className="grid grid-cols-2 gap-4">
@@ -776,51 +935,57 @@ export const InventoryPage = () => {
           {/* Cylinders - Full only */}
           <div>
             <h3 className="font-semibold text-sm mb-2">Cylinders - Full (Load) Only (Multiple)</h3>
-            {saleForm.watch('cylinders').map((_, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search cylinder..."
-                      value={cylinderSearch}
-                      onChange={(e) => setCylinderSearch(e.target.value)}
-                      className="input-field pl-10 w-full"
-                    />
-                    {cylinderSearch && filteredCylindersForSearch.filter(c => c.status === 'full').length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                        {filteredCylindersForSearch.filter(c => c.status === 'full').map(c => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              saleForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                              setCylinderSearch('')
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                          >
-                            {c.cylinderCode} — {c.gasTypeName}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+            {saleForm.watch('cylinders').map((cylinder, idx) => {
+              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
+              return (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search cylinder..."
+                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
+                        onChange={(e) => {
+                          setCylinderSearch(e.target.value)
+                          if (!e.target.value) saleForm.setValue(`cylinders.${idx}.cylinderId`, '')
+                        }}
+                        className="input-field pl-10 w-full"
+                      />
+                      {!selectedCylinder && (cylinderSearch || saleForm.watch(`cylinders.${idx}.cylinderId`)) && filteredCylindersForSearch.filter(c => c.status === 'full').length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                          {filteredCylindersForSearch.filter(c => c.status === 'full').map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                saleForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                                setCylinderSearch('')
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                            >
+                              {c.cylinderCode} — {c.gasTypeName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {saleForm.watch('cylinders').length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cyl = saleForm.watch('cylinders')
+                        saleForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                {saleForm.watch('cylinders').length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cyl = saleForm.watch('cylinders')
-                      saleForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                    }}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
             <button
               type="button"
               onClick={() => {
@@ -877,14 +1042,14 @@ export const InventoryPage = () => {
           </FormField>
 
           <div className="flex justify-end gap-3 pt-2 border-t">
-            <button type="button" onClick={() => { setSaleModal(false); setCylinderSearch(''); setCustomerSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={resetSaleModal} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Sale'}</button>
           </div>
         </form>
       </Modal>
 
       {/* Empty Return Modal */}
-      <Modal isOpen={emptyReturnModal} onClose={() => { setEmptyReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} title="Empty Return">
+      <Modal isOpen={emptyReturnModal} onClose={resetEmptyReturnModal} title="Empty Return">
         <form onSubmit={emptyReturnForm.handleSubmit(onEmptyReturnSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
           {/* Customer Search */}
           <FormField label="Customer Name" error={emptyReturnForm.formState.errors.customerName?.message} required>
@@ -892,12 +1057,15 @@ export const InventoryPage = () => {
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search customer..."
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
+                placeholder="Search or type customer name..."
+                value={emptyReturnForm.watch('customerName') || customerSearch}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value)
+                  if (!e.target.value) emptyReturnForm.setValue('customerName', '')
+                }}
                 className="input-field pl-10"
               />
-              {customerSearch && filteredCustomers.length > 0 && (
+              {(customerSearch || emptyReturnForm.watch('customerName')) && filteredCustomers.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
                   {filteredCustomers.map(c => (
                     <button
@@ -907,9 +1075,13 @@ export const InventoryPage = () => {
                         emptyReturnForm.setValue('customerName', c.name)
                         setCustomerSearch('')
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className={`w-full text-left px-3 py-2 text-sm ${
+                        emptyReturnForm.watch('customerName') === c.name
+                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
                     >
-                      {c.name}
+                      ✓ {c.name}
                     </button>
                   ))}
                 </div>
@@ -930,51 +1102,58 @@ export const InventoryPage = () => {
           {/* Cylinders - Customer wise only */}
           <div>
             <h3 className="font-semibold text-sm mb-2">Cylinders (Customer wise sales cylinders only) (Multiple)</h3>
-            {emptyReturnForm.watch('cylinders')?.map((_, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search cylinder..."
-                      value={cylinderSearch}
-                      onChange={(e) => setCylinderSearch(e.target.value)}
-                      className="input-field pl-10 w-full"
-                    />
-                    {cylinderSearch && emptyReturnForm.watch('customerName') && getCustomerCylinders(emptyReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                        {getCustomerCylinders(emptyReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              emptyReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                              setCylinderSearch('')
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                          >
-                            {c.cylinderCode} — {c.gasTypeName}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+            {emptyReturnForm.watch('cylinders')?.map((cylinder, idx) => {
+              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
+              const customerCylinders = getCustomerCylinders(emptyReturnForm.watch('customerName'))
+              return (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search cylinder..."
+                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
+                        onChange={(e) => {
+                          setCylinderSearch(e.target.value)
+                          if (!e.target.value) emptyReturnForm.setValue(`cylinders.${idx}.cylinderId`, '')
+                        }}
+                        className="input-field pl-10 w-full"
+                      />
+                      {!selectedCylinder && cylinderSearch && emptyReturnForm.watch('customerName') && customerCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                          {customerCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                emptyReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                                setCylinderSearch('')
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                            >
+                              {c.cylinderCode} — {c.gasTypeName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {emptyReturnForm.watch('cylinders').length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cyl = emptyReturnForm.watch('cylinders')
+                        emptyReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                {emptyReturnForm.watch('cylinders').length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cyl = emptyReturnForm.watch('cylinders')
-                      emptyReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                    }}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
             <button
               type="button"
               onClick={() => {
@@ -992,14 +1171,14 @@ export const InventoryPage = () => {
           </FormField>
 
           <div className="flex justify-end gap-3 pt-2 border-t">
-            <button type="button" onClick={() => { setEmptyReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={resetEmptyReturnModal} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Record Return'}</button>
           </div>
         </form>
       </Modal>
 
       {/* Load Return Modal */}
-      <Modal isOpen={loadReturnModal} onClose={() => { setLoadReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} title="Load Return (Fault Cylinder)">
+      <Modal isOpen={loadReturnModal} onClose={resetLoadReturnModal} title="Load Return (Fault Cylinder)">
         <form onSubmit={loadReturnForm.handleSubmit(onLoadReturnSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
           {/* Customer Search */}
           <FormField label="Customer" error={loadReturnForm.formState.errors.customerName?.message} required>
@@ -1007,12 +1186,15 @@ export const InventoryPage = () => {
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search customer..."
-                value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
+                placeholder="Search or type customer name..."
+                value={loadReturnForm.watch('customerName') || customerSearch}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value)
+                  if (!e.target.value) loadReturnForm.setValue('customerName', '')
+                }}
                 className="input-field pl-10"
               />
-              {customerSearch && filteredCustomers.length > 0 && (
+              {(customerSearch || loadReturnForm.watch('customerName')) && filteredCustomers.length > 0 && (
                 <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
                   {filteredCustomers.map(c => (
                     <button
@@ -1022,9 +1204,13 @@ export const InventoryPage = () => {
                         loadReturnForm.setValue('customerName', c.name)
                         setCustomerSearch('')
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className={`w-full text-left px-3 py-2 text-sm ${
+                        loadReturnForm.watch('customerName') === c.name
+                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
                     >
-                      {c.name}
+                      ✓ {c.name}
                     </button>
                   ))}
                 </div>
@@ -1045,51 +1231,58 @@ export const InventoryPage = () => {
           {/* Cylinders - Customer wise only */}
           <div>
             <h3 className="font-semibold text-sm mb-2">Cylinders (Customer wise sales cylinders only) (Multiple)</h3>
-            {loadReturnForm.watch('cylinders')?.map((_, idx) => (
-              <div key={idx} className="flex gap-2 mb-2">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search cylinder..."
-                      value={cylinderSearch}
-                      onChange={(e) => setCylinderSearch(e.target.value)}
-                      className="input-field pl-10 w-full"
-                    />
-                    {cylinderSearch && loadReturnForm.watch('customerName') && getCustomerCylinders(loadReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                        {getCustomerCylinders(loadReturnForm.watch('customerName')).filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => {
-                              loadReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                              setCylinderSearch('')
-                            }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                          >
-                            {c.cylinderCode} — {c.gasTypeName}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+            {loadReturnForm.watch('cylinders')?.map((cylinder, idx) => {
+              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
+              const customerCylinders = getCustomerCylinders(loadReturnForm.watch('customerName'))
+              return (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search cylinder..."
+                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
+                        onChange={(e) => {
+                          setCylinderSearch(e.target.value)
+                          if (!e.target.value) loadReturnForm.setValue(`cylinders.${idx}.cylinderId`, '')
+                        }}
+                        className="input-field pl-10 w-full"
+                      />
+                      {!selectedCylinder && cylinderSearch && loadReturnForm.watch('customerName') && customerCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                          {customerCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                loadReturnForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                                setCylinderSearch('')
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                            >
+                              {c.cylinderCode} — {c.gasTypeName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {loadReturnForm.watch('cylinders').length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cyl = loadReturnForm.watch('cylinders')
+                        loadReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                {loadReturnForm.watch('cylinders').length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const cyl = loadReturnForm.watch('cylinders')
-                      loadReturnForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                    }}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
             <button
               type="button"
               onClick={() => {
@@ -1111,7 +1304,7 @@ export const InventoryPage = () => {
           </FormField>
 
           <div className="flex justify-end gap-3 pt-2 border-t">
-            <button type="button" onClick={() => { setLoadReturnModal(false); setCustomerSearch(''); setCylinderSearch(''); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={resetLoadReturnModal} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Record Return'}</button>
           </div>
         </form>

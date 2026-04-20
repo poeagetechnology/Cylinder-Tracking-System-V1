@@ -15,7 +15,6 @@ const navItems = [
   { to: '/cylinders', icon: Package, label: 'Cylinders', roles: ['superadmin', 'admin', 'user'] },
   { to: '/filling', icon: Wind, label: 'Filling', roles: ['superadmin', 'admin', 'user'] },
   { to: '/inventory', icon: Package, label: 'Inventory', roles: ['superadmin', 'admin', 'user'] },
-  { to: '/movements', icon: ArrowRightLeft, label: 'Movements', roles: ['superadmin', 'admin', 'user'] },
   { to: '/vehicles', icon: Truck, label: 'Vehicles', roles: ['superadmin', 'admin'] },
   { to: '/customers', icon: UserCheck, label: 'Customers', roles: ['superadmin', 'admin'] },
   { to: '/suppliers', icon: Building2, label: 'Suppliers', roles: ['superadmin', 'admin'] },

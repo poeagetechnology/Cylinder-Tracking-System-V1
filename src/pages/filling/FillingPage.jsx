@@ -19,14 +19,17 @@ export const FillingPage = () => {
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [cylinderSearch, setCylinderSearch] = useState('')
+  const [selectedCylinders, setSelectedCylinders] = useState([])
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
+  const { handleSubmit, reset, formState: { errors } } = useForm()
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
     fillings, ['cylinderCode', 'gasTypeName', 'status'], 10
   )
 
-  const emptyCylinders = cylinders.filter((c) => c.status === 'empty')
+  // Filter to only Oxygen gas type
+  const oxygenCylinders = cylinders.filter((c) => c.gasTypeName?.toLowerCase().includes('oxygen'))
+  const emptyCylinders = oxygenCylinders.filter((c) => c.status === 'empty')
   const filteredCylinders = cylinderSearch 
     ? emptyCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase()))
     : emptyCylinders
@@ -36,32 +39,56 @@ export const FillingPage = () => {
     return cubicGases.some(g => gasName?.toLowerCase().includes(g.toLowerCase())) ? 'cubic' : 'kg'
   }
 
-  const onStart = async (data) => {
+  const onStart = async () => {
+    if (selectedCylinders.length === 0) {
+      toast.error('Please select at least one cylinder')
+      return
+    }
+
     setSaving(true)
     try {
-      const cylinder = cylinders.find((c) => c.id === data.cylinderId)
-      const capacityUnit = getCapacityUnit(cylinder?.gasTypeName)
-      await addDocument('fillings', {
-        cylinderId: data.cylinderId,
-        cylinderCode: cylinder?.cylinderCode,
-        gasTypeName: cylinder?.gasTypeName,
-        capacity: cylinder?.capacity,
-        capacityUnit,
-        startedAt: new Date().toISOString(),
-        endedAt: null,
-        duration: null,
-        status: 'in_progress',
-        startedBy: userProfile?.name,
-      })
-      await updateDocument('cylinders', data.cylinderId, { status: 'in_use' })
-      toast.success('Filling started')
+      for (const cylinderId of selectedCylinders) {
+        const cylinder = cylinders.find((c) => c.id === cylinderId)
+        const capacityUnit = getCapacityUnit(cylinder?.gasTypeName)
+        await addDocument('fillings', {
+          cylinderId: cylinderId,
+          cylinderCode: cylinder?.cylinderCode,
+          gasTypeName: cylinder?.gasTypeName,
+          capacity: cylinder?.capacity,
+          capacityUnit,
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          duration: null,
+          status: 'in_progress',
+          startedBy: userProfile?.name,
+        })
+        await updateDocument('cylinders', cylinderId, { status: 'in_use' })
+      }
+      toast.success(`Filling started for ${selectedCylinders.length} cylinder(s)`)
       setModalOpen(false)
       setCylinderSearch('')
+      setSelectedCylinders([])
       reset()
     } catch {
       toast.error('Failed to start filling')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const toggleCylinderSelection = (cylinderId) => {
+    setSelectedCylinders((prev) =>
+      prev.includes(cylinderId)
+        ? prev.filter((id) => id !== cylinderId)
+        : [...prev, cylinderId]
+    )
+  }
+
+  const handleSelectAll = () => {
+    if (selectedCylinders.length === filteredCylinders.length) {
+      setSelectedCylinders([])
+    } else {
+      setSelectedCylinders(filteredCylinders.map((c) => c.id))
     }
   }
 
@@ -198,9 +225,9 @@ export const FillingPage = () => {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => { setModalOpen(false); setCylinderSearch(''); }} title="Start Filling Session">
-        <form onSubmit={handleSubmit(onStart)} className="space-y-4">
-          <FormField label="Search Cylinder by Number" required>
+      <Modal isOpen={modalOpen} onClose={() => { setModalOpen(false); setCylinderSearch(''); setSelectedCylinders([]); }} title="Start Filling Session">
+        <div className="space-y-4">
+          <FormField label="Search Cylinder by Number">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <input
@@ -213,37 +240,63 @@ export const FillingPage = () => {
             </div>
           </FormField>
 
-          <FormField label="Select Cylinder (Empty)" error={errors.cylinderId?.message} required>
-            <select {...register('cylinderId', { required: 'Please select a cylinder' })} className="input-field">
-              <option value="">Select an empty cylinder</option>
-              {filteredCylinders.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.cylinderCode} — {c.gasTypeName} ({c.capacity} {getCapacityUnit(c.gasTypeName)})
-                </option>
-              ))}
-            </select>
-            {errors.cylinderId && <p className="error-text">{errors.cylinderId.message}</p>}
+          <FormField label="Select Cylinders (Empty)" required>
+            {filteredCylinders.length > 0 && (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  {selectedCylinders.length === filteredCylinders.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+            )}
+
+            <div className="border border-gray-300 dark:border-gray-600 rounded-lg divide-y divide-gray-200 dark:divide-gray-600 max-h-64 overflow-y-auto">
+              {filteredCylinders.length > 0 ? (
+                filteredCylinders.map((c) => (
+                  <label key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedCylinders.includes(c.id)}
+                      onChange={() => toggleCylinderSelection(c.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 cursor-pointer"
+                    />
+                    <span className="text-sm text-gray-900 dark:text-gray-100 flex-1">
+                      {c.cylinderCode} — {c.gasTypeName} ({c.capacity} {getCapacityUnit(c.gasTypeName)})
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                  {cylinderSearch ? 'No matching cylinders found' : 'No empty cylinders available'}
+                </div>
+              )}
+            </div>
           </FormField>
 
-          {filteredCylinders.length === 0 && cylinderSearch && (
-            <p className="text-blue-600 text-sm bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-              No matching cylinders found. Try a different search term.
-            </p>
+          {selectedCylinders.length > 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-400">
+                <span className="font-semibold">{selectedCylinders.length}</span> cylinder(s) selected for filling
+              </p>
+            </div>
           )}
 
           {emptyCylinders.length === 0 && !cylinderSearch && (
             <p className="text-yellow-600 text-sm bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg">
-              No empty cylinders available. Mark cylinders as empty first.
+              No empty Oxygen cylinders available. Mark Oxygen cylinders as empty first.
             </p>
           )}
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => { setModalOpen(false); setCylinderSearch(''); }} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving || emptyCylinders.length === 0} className="btn-primary">
-              {saving ? 'Starting...' : 'Start Filling'}
+            <button type="button" onClick={() => { setModalOpen(false); setCylinderSearch(''); setSelectedCylinders([]); }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={onStart} disabled={saving || selectedCylinders.length === 0} className="btn-primary">
+              {saving ? 'Starting...' : `Start Filling (${selectedCylinders.length})`}
             </button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )

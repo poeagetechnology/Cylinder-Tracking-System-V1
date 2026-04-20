@@ -17,7 +17,6 @@ import { GasTypesPage } from './pages/gas/GasTypesPage'
 import { CylindersPage } from './pages/cylinders/CylindersPage'
 import { FillingPage } from './pages/filling/FillingPage'
 import { InventoryPage } from './pages/inventory/InventoryPage'
-import { MovementsPage } from './pages/inventory/MovementsPage'
 import { VehiclesPage } from './pages/vehicles/VehiclesPage'
 import { CustomersPage } from './pages/customers/CustomersPage'
 import { SuppliersPage } from './pages/suppliers/SuppliersPage'
@@ -54,7 +53,6 @@ function AppRoutes() {
           <Route path="/cylinders" element={<CylindersPage />} />
           <Route path="/filling" element={<FillingPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/movements" element={<MovementsPage />} />
 
           <Route element={<RoleBasedRoute allowedRoles={['admin', 'superadmin']} />}>
             <Route path="/gas" element={<GasTypesPage />} />
