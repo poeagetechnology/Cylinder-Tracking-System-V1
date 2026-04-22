@@ -577,6 +577,8 @@ export const ReportsPage = () => {
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS)
   const [hasGenerated, setHasGenerated] = useState(false)
+  const [customerFilters, setCustomerFilters] = useState({ selectedCustomers: [] })
+  const [customerHasGenerated, setCustomerHasGenerated] = useState(false)
 
   const { data: cylinders, loading: cylindersLoading } = useFirestoreCollection('cylinders')
   const { data: fillings, loading: fillingsLoading } = useFirestoreCollection('fillings')
@@ -706,7 +708,7 @@ export const ReportsPage = () => {
       'DCC Number': record.dccNumber || '—',
       'Gas Type': record.gasType,
       'Movement Type': record.movementLabel,
-      Client: record.client || '—',
+      Customer: record.client || '—',
       Cylinder: record.cylinderCode,
       Capacity: record.capacity,
       Status: record.status,
@@ -721,15 +723,43 @@ export const ReportsPage = () => {
     setFilters((current) => ({ ...current, [key]: value }))
   }
 
-  const handleGenerate = () => {
+  const handleGenerateMovements = () => {
     setAppliedFilters(filters)
     setHasGenerated(true)
   }
 
-  const handleClear = () => {
+  const handleClearMovements = () => {
     setFilters(EMPTY_FILTERS)
     setAppliedFilters(EMPTY_FILTERS)
     setHasGenerated(false)
+  }
+
+  const handleSelectAllCustomers = () => {
+    if (customerFilters.selectedCustomers.length === clientOptions.length) {
+      setCustomerFilters({ selectedCustomers: [] })
+    } else {
+      setCustomerFilters({ selectedCustomers: [...clientOptions] })
+    }
+  }
+
+  const handleCustomerCheckboxChange = (customer) => {
+    setCustomerFilters((current) => {
+      const isSelected = current.selectedCustomers.includes(customer)
+      return {
+        selectedCustomers: isSelected
+          ? current.selectedCustomers.filter((c) => c !== customer)
+          : [...current.selectedCustomers, customer],
+      }
+    })
+  }
+
+  const handleGenerateCustomers = () => {
+    setCustomerHasGenerated(true)
+  }
+
+  const handleClearCustomers = () => {
+    setCustomerFilters({ selectedCustomers: [] })
+    setCustomerHasGenerated(false)
   }
 
   const renderEmptyState = (title, description) => (
@@ -764,6 +794,7 @@ export const ReportsPage = () => {
               onClick={() => {
                 setActiveReport(report.id)
                 setHasGenerated(false)
+                setCustomerHasGenerated(false)
               }}
               className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 font-medium transition ${
                 isActive
@@ -777,6 +808,67 @@ export const ReportsPage = () => {
           )
         })}
       </div>
+
+      {/* Customer Report Filters */}
+      {activeReport === 'customers' && (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800 md:p-8">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-50 text-purple-500 dark:bg-purple-500/10 dark:text-purple-300">
+              <Users className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Top Customers Filter</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Select customers to view their detailed reports.</p>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <div className="mb-4 flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Select Customers</label>
+              <button
+                onClick={handleSelectAllCustomers}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                {customerFilters.selectedCustomers.length === clientOptions.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/30">
+              {clientOptions.length > 0 ? (
+                clientOptions.map((customer) => (
+                  <label key={customer} className="flex items-center gap-3 cursor-pointer hover:bg-white dark:hover:bg-slate-800 p-2 rounded transition">
+                    <input
+                      type="checkbox"
+                      checked={customerFilters.selectedCustomers.includes(customer)}
+                      onChange={() => handleCustomerCheckboxChange(customer)}
+                      className="h-4 w-4 rounded border-slate-300 text-primary-600 cursor-pointer"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-200">{customer}</span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No customers available</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleGenerateCustomers}
+              disabled={customerFilters.selectedCustomers.length === 0}
+              className="inline-flex min-w-[150px] items-center justify-center rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+            >
+              Generate Report
+            </button>
+            <button
+              onClick={handleClearCustomers}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+            >
+              <FilterX className="h-4 w-4" />
+              Clear Filters
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Movement Report Filters */}
       {activeReport === 'movements' && (
@@ -847,13 +939,13 @@ export const ReportsPage = () => {
               </select>
             </ReportField>
 
-            <ReportField label="Client">
+            <ReportField label="Customer">
               <select
                 value={filters.client}
                 onChange={handleFilterChange('client')}
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
-                <option value="">Select client</option>
+                <option value="">Select customer</option>
                 {clientOptions.map((client) => (
                   <option key={client} value={client}>{client}</option>
                 ))}
@@ -876,13 +968,13 @@ export const ReportsPage = () => {
 
           <div className="mt-6 flex flex-wrap gap-3">
             <button
-              onClick={handleGenerate}
+              onClick={handleGenerateMovements}
               className="inline-flex min-w-[150px] items-center justify-center rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
             >
               Generate Report
             </button>
             <button
-              onClick={handleClear}
+              onClick={handleClearMovements}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             >
               <FilterX className="h-4 w-4" />
@@ -898,7 +990,21 @@ export const ReportsPage = () => {
         {activeReport === 'sales' && <SalesReport fillings={fillings} exportRows={exportRows} />}
         {activeReport === 'expenses' && <ExpensesReport expenses={expenses} />}
         {activeReport === 'inventory' && <InventoryReport cylinders={cylinders} />}
-        {activeReport === 'customers' && <TopCustomersReport fillings={fillings} customers={customers} />}
+        {activeReport === 'customers' && (
+          <>
+            {!customerHasGenerated ? (
+              <TopCustomersReport fillings={fillings} customers={customers} />
+            ) : (
+              <TopCustomersReport 
+                fillings={fillings.filter((f) => {
+                  const customer = f.clientName || f.customerName || 'Unknown'
+                  return customerFilters.selectedCustomers.includes(customer)
+                })} 
+                customers={customers} 
+              />
+            )}
+          </>
+        )}
 
         {/* Movements Report */}
         {activeReport === 'movements' && (
@@ -945,7 +1051,7 @@ export const ReportsPage = () => {
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                     <thead className="bg-slate-50 dark:bg-slate-900/50">
                       <tr>
-                        {['Date', 'DCC Number', 'Gas Type', 'Movement Type', 'Client', 'Cylinder', 'Capacity', 'Status', 'Source'].map((heading) => (
+                        {['Date', 'DCC Number', 'Gas Type', 'Movement Type', 'Customer', 'Cylinder', 'Capacity', 'Status', 'Source'].map((heading) => (
                           <th key={heading} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
                             {heading}
                           </th>

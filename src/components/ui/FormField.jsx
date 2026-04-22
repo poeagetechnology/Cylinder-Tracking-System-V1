@@ -1,3 +1,5 @@
+import { forwardRef } from 'react'
+
 export const FormField = ({ label, error, children, required }) => (
   <div className="mb-4">
     {label && (
@@ -11,16 +13,22 @@ export const FormField = ({ label, error, children, required }) => (
   </div>
 )
 
-export const Input = ({ register, error, ...props }) => (
-  <input {...register} {...props} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
-)
+export const Input = forwardRef(({ register, error, ...props }, ref) => (
+  <input {...register} {...props} ref={ref} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
+))
 
-export const Select = ({ register, error, children, ...props }) => (
-  <select {...register} {...props} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`}>
+Input.displayName = 'Input'
+
+export const Select = forwardRef(({ register, error, children, ...props }, ref) => (
+  <select {...register} {...props} ref={ref} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`}>
     {children}
   </select>
-)
+))
 
-export const Textarea = ({ register, error, rows = 3, ...props }) => (
-  <textarea {...register} rows={rows} {...props} className={`input-field resize-none ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
-)
+Select.displayName = 'Select'
+
+export const Textarea = forwardRef(({ register, error, rows = 3, ...props }, ref) => (
+  <textarea {...register} rows={rows} {...props} ref={ref} className={`input-field resize-none ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
+))
+
+Textarea.displayName = 'Textarea'
