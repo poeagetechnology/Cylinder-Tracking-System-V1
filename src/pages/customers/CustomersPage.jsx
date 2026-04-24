@@ -164,24 +164,25 @@ export const CustomersPage = () => {
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Customer' : 'Add Customer'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+
           <FormField label="Full Name" error={errors.name?.message} required>
-            <Input register={register('name')} error={errors.name} placeholder="Customer full name" />
+            <Input {...register('name')} error={errors.name} placeholder="Customer full name" />
           </FormField>
 
           <FormField label="GST Number" error={errors.gstNumber?.message}>
-            <Input register={register('gstNumber')} error={errors.gstNumber} placeholder="Optional GST number" />
+            <Input {...register('gstNumber')} error={errors.gstNumber} placeholder="Optional GST number" />
           </FormField>
 
           <FormField label="Phone Number" error={errors.phone?.message} required>
-            <Input register={register('phone')} error={errors.phone} placeholder="10-digit mobile number" />
+            <Input {...register('phone')} error={errors.phone} placeholder="10-digit mobile number" />
           </FormField>
 
           <FormField label="E Mail" error={errors.email?.message}>
-            <Input register={register('email')} error={errors.email} type="email" placeholder="Optional email" />
+            <Input {...register('email')} error={errors.email} type="email" placeholder="Optional email" />
           </FormField>
 
           <FormField label="Area/Location" error={errors.area?.message} required>
-            <Select register={register('area')} error={errors.area}>
+            <Select {...register('area')} error={errors.area}>
               <option value="">Select area</option>
               {areas.map(a => <option key={a.id} value={a.areaName}>{a.areaName}</option>)}
             </Select>
@@ -194,7 +195,7 @@ export const CustomersPage = () => {
               {rateFields.map((field, idx) => (
                 <div key={field.id} className="flex gap-2 items-end">
                   <div className="flex-1">
-                    <Select register={register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
+                    <Select {...register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
                       <option value="">Select gas type</option>
                       {gasTypes.map(g => (
                         <option key={g.id} value={g.id}>{g.gasName}</option>
@@ -203,7 +204,7 @@ export const CustomersPage = () => {
                   </div>
                   <div className="w-24">
                     <Input
-                      register={register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
+                      {...register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
                       type="number"
                       min="0"
                       step="0.01"
@@ -230,7 +231,7 @@ export const CustomersPage = () => {
           </div>
 
           <FormField label="Full Address" error={errors.address?.message} required>
-            <Textarea register={register('address')} error={errors.address} placeholder="Complete address" rows="2" />
+            <Textarea {...register('address')} error={errors.address} placeholder="Complete address" rows="2" />
           </FormField>
 
           <div className="flex justify-end gap-3 pt-2 border-t">

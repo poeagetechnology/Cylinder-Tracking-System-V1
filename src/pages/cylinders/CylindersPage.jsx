@@ -278,18 +278,18 @@ export const CylindersPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Cylinder' : 'Add Cylinder'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Cylinder Code" error={errors.cylinderCode?.message} required>
-            <Input register={register('cylinderCode')} error={errors.cylinderCode} placeholder="e.g. CYL-001" />
+            <Input {...register('cylinderCode')} error={errors.cylinderCode} placeholder="e.g. CYL-001" />
           </FormField>
 
           <FormField label="Gas Type" error={errors.gasTypeId?.message} required>
-            <Select register={register('gasTypeId')} error={errors.gasTypeId}>
+            <Select {...register('gasTypeId')} error={errors.gasTypeId}>
               <option value="">Select gas type</option>
               {gasTypes.map((g) => <option key={g.id} value={g.id}>{g.gasName}</option>)}
             </Select>
           </FormField>
 
           <FormField label={`Capacity (${selectedGas ? getCapacityUnit(selectedGas.gasName) : 'unit'})`} error={errors.capacity?.message} required>
-            <Select register={register('capacity', { valueAsNumber: true })} error={errors.capacity}>
+            <Select {...register('capacity', { valueAsNumber: true })} error={errors.capacity}>
               <option value="">Select capacity</option>
               {(selectedGas?.capacities || []).map((c, i) => {
                 const capacity = typeof c === 'number' ? { value: c, unit: 'kg' } : c
@@ -301,20 +301,20 @@ export const CylindersPage = () => {
           </FormField>
 
           <FormField label="Status" error={errors.status?.message} required>
-            <Select register={register('status')} error={errors.status}>
+            <Select {...register('status')} error={errors.status}>
               {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
             </Select>
           </FormField>
 
           <FormField label="Location" error={errors.location?.message} required>
-            <Select register={register('location')} error={errors.location}>
+            <Select {...register('location')} error={errors.location}>
               <option value="">Select location/area</option>
               {areas.map((area) => <option key={area.id} value={area.areaName}>{area.areaName}</option>)}
             </Select>
           </FormField>
 
           <FormField label="Client" error={errors.client?.message} required>
-            <Select register={register('client')} error={errors.client}>
+            <Select {...register('client')} error={errors.client}>
               <option value="">Select client</option>
               {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </Select>

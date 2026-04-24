@@ -45,19 +45,14 @@ export const LoginPage = () => {
 
         <div className="card">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
             <FormField label="Email Address" error={errors.email?.message} required>
-              <Input register={register('email')} error={errors.email} type="email" placeholder="your@email.com" autoComplete="email" />
+              <Input {...register('email')} error={errors.email} type="email" />
             </FormField>
 
             <FormField label="Password" error={errors.password?.message} required>
               <div className="relative">
-                <Input
-                  register={register('password')}
-                  error={errors.password}
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Your password"
-                  autoComplete="current-password"
-                />
+                <Input {...register('password')} error={errors.password} type={showPassword ? 'text' : 'password'} />
                 <button
                   type="button"
                   onClick={() => setShowPassword((s) => !s)}

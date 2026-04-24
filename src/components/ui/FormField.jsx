@@ -13,22 +13,38 @@ export const FormField = ({ label, error, children, required }) => (
   </div>
 )
 
-export const Input = forwardRef(({ register, error, ...props }, ref) => (
-  <input {...register} {...props} ref={ref} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
+
+export const Input = forwardRef(({ error, className = '', ...props }, ref) => (
+  <input
+    ref={ref}
+    className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''} ${className}`}
+    {...props}
+  />
 ))
 
 Input.displayName = 'Input'
 
-export const Select = forwardRef(({ register, error, children, ...props }, ref) => (
-  <select {...register} {...props} ref={ref} className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''}`}>
+
+export const Select = forwardRef(({ error, children, className = '', ...props }, ref) => (
+  <select
+    ref={ref}
+    className={`input-field ${error ? 'border-red-500 focus:ring-red-500' : ''} ${className}`}
+    {...props}
+  >
     {children}
   </select>
 ))
 
 Select.displayName = 'Select'
 
-export const Textarea = forwardRef(({ register, error, rows = 3, ...props }, ref) => (
-  <textarea {...register} rows={rows} {...props} ref={ref} className={`input-field resize-none ${error ? 'border-red-500 focus:ring-red-500' : ''}`} />
+
+export const Textarea = forwardRef(({ error, rows = 3, className = '', ...props }, ref) => (
+  <textarea
+    ref={ref}
+    rows={rows}
+    className={`input-field resize-none ${error ? 'border-red-500 focus:ring-red-500' : ''} ${className}`}
+    {...props}
+  />
 ))
 
 Textarea.displayName = 'Textarea'

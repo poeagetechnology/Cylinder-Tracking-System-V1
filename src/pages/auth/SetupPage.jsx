@@ -47,20 +47,21 @@ export const SetupPage = () => {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
             <FormField label="Full Name" error={errors.name?.message} required>
-              <Input register={register('name')} error={errors.name} placeholder="Enter your full name" />
+              <Input {...register('name')} error={errors.name} placeholder="Enter your full name" />
             </FormField>
 
             <FormField label="Email Address" error={errors.email?.message} required>
-              <Input register={register('email')} error={errors.email} type="email" placeholder="admin@example.com" />
+              <Input {...register('email')} error={errors.email} type="email" placeholder="admin@example.com" />
             </FormField>
 
             <FormField label="Password" error={errors.password?.message} required>
-              <Input register={register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
+              <Input {...register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
             </FormField>
 
             <FormField label="Confirm Password" error={errors.confirmPassword?.message} required>
-              <Input register={register('confirmPassword')} error={errors.confirmPassword} type="password" placeholder="Repeat your password" />
+              <Input {...register('confirmPassword')} error={errors.confirmPassword} type="password" placeholder="Repeat your password" />
             </FormField>
 
             <button type="submit" disabled={loading} className="btn-primary w-full py-3 mt-2">

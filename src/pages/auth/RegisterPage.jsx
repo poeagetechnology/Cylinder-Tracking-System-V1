@@ -65,20 +65,21 @@ export const RegisterPage = () => {
 
         <div className="card">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
             <FormField label="Full Name" error={errors.name?.message} required>
-              <Input register={register('name')} error={errors.name} placeholder="Your full name" />
+              <Input {...register('name')} error={errors.name} placeholder="Your full name" />
             </FormField>
 
             <FormField label="Email Address" error={errors.email?.message} required>
-              <Input register={register('email')} error={errors.email} type="email" placeholder="your@email.com" />
+              <Input {...register('email')} error={errors.email} type="email" placeholder="your@email.com" />
             </FormField>
 
             <FormField label="Password" error={errors.password?.message} required>
-              <Input register={register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
+              <Input {...register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
             </FormField>
 
             <FormField label="Confirm Password" error={errors.confirmPassword?.message} required>
-              <Input register={register('confirmPassword')} error={errors.confirmPassword} type="password" placeholder="Repeat password" />
+              <Input {...register('confirmPassword')} error={errors.confirmPassword} type="password" placeholder="Repeat password" />
             </FormField>
 
             <button type="submit" disabled={loading} className="btn-primary w-full py-3">
