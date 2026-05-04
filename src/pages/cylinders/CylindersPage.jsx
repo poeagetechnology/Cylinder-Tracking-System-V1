@@ -308,17 +308,19 @@ export const CylindersPage = () => {
 
           <FormField label="Location" error={errors.location?.message} required>
             <Select {...register('location')} error={errors.location}>
-              <option value="">Select location/area</option>
+              <option value="Warehouse">Warehouse</option>
               {areas.map((area) => <option key={area.id} value={area.areaName}>{area.areaName}</option>)}
             </Select>
           </FormField>
 
-          <FormField label="Client" error={errors.client?.message} required>
-            <Select {...register('client')} error={errors.client}>
-              <option value="">Select client</option>
-              {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </Select>
-          </FormField>
+          {watch('status') === 'maintenance' && (
+            <FormField label="Client" error={errors.client?.message}>
+              <Select {...register('client')} error={errors.client}>
+                <option value="">Select company</option>
+                {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </Select>
+            </FormField>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>

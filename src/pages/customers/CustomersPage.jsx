@@ -190,40 +190,93 @@ export const CustomersPage = () => {
 
           {/* Gas Type Wise Rate */}
           <div className="border-t pt-4">
-            <h3 className="font-semibold text-sm mb-3">Gas Type Wise Rate (Fixed Amount)</h3>
-            <div className="space-y-2 mb-3">
-              {rateFields.map((field, idx) => (
-                <div key={field.id} className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Select {...register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
-                      <option value="">Select gas type</option>
-                      {gasTypes.map(g => (
-                        <option key={g.id} value={g.id}>{g.gasName}</option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div className="w-24">
-                    <Input
-                      {...register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Rate"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeRate(idx)}
-                    className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+            <h3 className="font-semibold text-sm mb-3">Gas Type & Capacity Wise Rate</h3>
+            {rateFields.length > 0 && (
+              <div className="overflow-x-auto mb-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">GAS</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">CAPACITY</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">RATE</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">GST %</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">TOTAL RATE</th>
+                      <th className="px-3 py-2 text-center font-semibold text-gray-700 dark:text-gray-300">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {rateFields.map((field, idx) => {
+                      const selectedGasId = watch(`gasTypeWiseRate.${idx}.gasTypeId`)
+                      const selectedGas = gasTypes.find(g => g.id === selectedGasId)
+                      const rate = watch(`gasTypeWiseRate.${idx}.rate`) || 0
+                      const gst = watch(`gasTypeWiseRate.${idx}.gst`) || 0
+                      const totalRate = rate + (rate * gst / 100)
+                      
+                      return (
+                        <tr key={field.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <td className="px-3 py-2">
+                            <Select {...register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
+                              <option value="">Select gas</option>
+                              {gasTypes.map(g => (
+                                <option key={g.id} value={g.id}>{g.gasName}</option>
+                              ))}
+                            </Select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              {...register(`gasTypeWiseRate.${idx}.capacity`)}
+                              className="input-field w-full"
+                            >
+                              <option value="">Select</option>
+                              {selectedGas?.capacities?.map((c, i) => {
+                                const cap = typeof c === 'number' ? { value: c, unit: 'kg' } : c
+                                return <option key={i} value={cap.value}>{cap.value}</option>
+                              })}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              {...register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="₹0.00"
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              {...register(`gasTypeWiseRate.${idx}.gst`, { valueAsNumber: true })}
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              placeholder="0%"
+                              className="w-full"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-center font-semibold text-blue-600 dark:text-blue-400">
+                            ₹{totalRate.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeRate(idx)}
+                              className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => appendRate({ gasTypeId: '', rate: '' })}
+              onClick={() => appendRate({ gasTypeId: '', capacity: '', rate: '', gst: 0 })}
               className="text-sm text-primary-600 hover:text-primary-700 font-medium"
             >
               + Add Gas Type Rate

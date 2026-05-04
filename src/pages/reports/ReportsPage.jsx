@@ -945,7 +945,7 @@ export const ReportsPage = () => {
                 onChange={handleFilterChange('client')}
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
-                <option value="">Select customer</option>
+                <option value="">All Customers</option>
                 {clientOptions.map((client) => (
                   <option key={client} value={client}>{client}</option>
                 ))}
@@ -958,7 +958,7 @@ export const ReportsPage = () => {
                 onChange={handleFilterChange('cylinderCode')}
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
-                <option value="">Select cylinder</option>
+                <option value="">All Cylinders</option>
                 {cylinderOptions.map((cylinderCode) => (
                   <option key={cylinderCode} value={cylinderCode}>{cylinderCode}</option>
                 ))}

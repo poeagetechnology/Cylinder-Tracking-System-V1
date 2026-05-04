@@ -179,19 +179,19 @@ export const VehiclesPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Vehicle' : 'Add Vehicle'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Vehicle Number" error={errors.vehicleNumber?.message} required>
-            <Input register={register('vehicleNumber')} error={errors.vehicleNumber} placeholder="e.g. TN-01-AB-1234" />
+            <Input {...register('vehicleNumber')} error={errors.vehicleNumber} placeholder="e.g. TN-01-AB-1234" />
           </FormField>
           <FormField label="Vehicle Type" error={errors.vehicleType?.message} required>
-            <Select register={register('vehicleType')} error={errors.vehicleType}>
+            <Select {...register('vehicleType')} error={errors.vehicleType}>
               <option value="">Select type</option>
               {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </Select>
           </FormField>
           <FormField label="Driver Name" error={errors.driverName?.message} required>
-            <Input register={register('driverName')} error={errors.driverName} placeholder="Driver full name" />
+            <Input {...register('driverName')} error={errors.driverName} placeholder="Driver full name" />
           </FormField>
           <FormField label="Cylinder Capacity" error={errors.capacity?.message} required>
-            <Input register={register('capacity', { valueAsNumber: true })} error={errors.capacity} type="number" placeholder="Max cylinders" />
+            <Input {...register('capacity', { valueAsNumber: true })} error={errors.capacity} type="number" placeholder="Max cylinders" />
           </FormField>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>

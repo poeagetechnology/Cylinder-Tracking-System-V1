@@ -553,9 +553,10 @@ export const InventoryPage = () => {
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
+    { key: 'gst', label: 'Tax %' },
+    { key: 'gstAmount', label: 'Tax Amount (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
-    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
-    { key: 'gst', label: 'GST %' },
+    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
   ]
 
@@ -564,9 +565,10 @@ export const InventoryPage = () => {
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
+    { key: 'gst', label: 'Tax %' },
+    { key: 'gstAmount', label: 'Tax Amount (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
-    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
-    { key: 'gst', label: 'GST %' },
+    { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
   ]
 

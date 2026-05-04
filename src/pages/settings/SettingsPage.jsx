@@ -41,10 +41,10 @@ export const SettingsPage = () => {
         <form onSubmit={handleSubmit(onProfileSave)} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label="Full Name" error={errors.name?.message}>
-              <Input register={register('name', { required: 'Name is required' })} placeholder="Your name" />
+              <Input {...register('name', { required: 'Name is required' })} placeholder="Your name" />
             </FormField>
             <FormField label="Email Address">
-              <Input register={register('email')} type="email" disabled className="opacity-60 cursor-not-allowed" />
+              <Input {...register('email')} type="email" disabled className="opacity-60 cursor-not-allowed" />
               <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
             </FormField>
           </div>

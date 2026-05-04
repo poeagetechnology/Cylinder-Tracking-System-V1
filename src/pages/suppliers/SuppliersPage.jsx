@@ -77,18 +77,18 @@ export const SuppliersPage = () => {
       </div>
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Supplier' : 'Add Supplier'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <FormField label="Company Name" error={errors.name?.message} required><Input register={register('name')} error={errors.name} placeholder="Company name" /></FormField>
-          <FormField label="Contact Person Name" error={errors.contactPerson?.message} required><Input register={register('contactPerson')} error={errors.contactPerson} placeholder="Contact person name" /></FormField>
-          <FormField label="GST Number" error={errors.gstNumber?.message}><Input register={register('gstNumber')} error={errors.gstNumber} placeholder="Optional" /></FormField>
-          <FormField label="Phone Number" error={errors.phone?.message} required><Input register={register('phone')} error={errors.phone} placeholder="10-digit number" /></FormField>
-          <FormField label="E Mail" error={errors.email?.message}><Input register={register('email')} error={errors.email} type="email" placeholder="Optional" /></FormField>
+          <FormField label="Company Name" error={errors.name?.message} required><Input {...register('name')} error={errors.name} placeholder="Company name" /></FormField>
+          <FormField label="Contact Person Name" error={errors.contactPerson?.message} required><Input {...register('contactPerson')} error={errors.contactPerson} placeholder="Contact person name" /></FormField>
+          <FormField label="GST Number" error={errors.gstNumber?.message}><Input {...register('gstNumber')} error={errors.gstNumber} placeholder="Optional" /></FormField>
+          <FormField label="Phone Number" error={errors.phone?.message} required><Input {...register('phone')} error={errors.phone} placeholder="10-digit number" /></FormField>
+          <FormField label="E Mail" error={errors.email?.message}><Input {...register('email')} error={errors.email} type="email" placeholder="Optional" /></FormField>
           <FormField label="Area/Location" error={errors.area?.message} required>
-            <Select register={register('area')} error={errors.area}>
+            <Select {...register('area')} error={errors.area}>
               <option value="">Select area</option>
-              {areas?.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+              {areas?.map(a => <option key={a.id} value={a.areaName}>{a.areaName}</option>)}
             </Select>
           </FormField>
-          <FormField label="Full Address" error={errors.address?.message} required><Textarea register={register('address')} error={errors.address} placeholder="Full address" /></FormField>
+          <FormField label="Full Address" error={errors.address?.message} required><Textarea {...register('address')} error={errors.address} placeholder="Full address" /></FormField>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save'}</button>

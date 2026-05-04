@@ -376,6 +376,26 @@ export const FillingPage = () => {
           <FormField label="GST %" error={purchaseForm.formState?.errors?.gst?.message}>
             <Input {...purchaseForm.register('gst')} type="number" min="0" max="100" step="0.01" placeholder="0" />
           </FormField>
+          
+          {(purchaseForm.watch('currentAmount') || purchaseForm.watch('gst')) && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(purchaseForm.watch('currentAmount') || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Tax ({purchaseForm.watch('gst') || 0}%)</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{(((purchaseForm.watch('currentAmount') || 0) * (purchaseForm.watch('gst') || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Total Amount</p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">₹{(parseFloat(purchaseForm.watch('currentAmount') || 0) + ((purchaseForm.watch('currentAmount') || 0) * (purchaseForm.watch('gst') || 0)) / 100).toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <FormField label="Notes">
             <Textarea {...purchaseForm.register('notes')} placeholder="Optional notes" rows="2" />
           </FormField>

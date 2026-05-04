@@ -193,19 +193,19 @@ export const UsersPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add New User">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Full Name" error={errors.name?.message} required>
-            <Input register={register('name')} error={errors.name} placeholder="Enter user name" />
+            <Input {...register('name')} error={errors.name} placeholder="Enter user name" />
           </FormField>
 
           <FormField label="Email Address" error={errors.email?.message} required>
-            <Input register={register('email')} error={errors.email} type="email" placeholder="user@example.com" />
+            <Input {...register('email')} error={errors.email} type="email" placeholder="user@example.com" />
           </FormField>
 
           <FormField label="Password" error={errors.password?.message} required>
-            <Input register={register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
+            <Input {...register('password')} error={errors.password} type="password" placeholder="Min. 8 characters" />
           </FormField>
 
           <FormField label="Role" error={errors.role?.message} required>
-            <Select register={register('role')} error={errors.role}>
+            <Select {...register('role')} error={errors.role}>
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </Select>

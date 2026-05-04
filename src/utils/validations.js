@@ -39,7 +39,7 @@ export const cylinderSchema = Yup.object({
   capacity: Yup.number().positive().required('Capacity is required'),
   status: Yup.string().required('Status is required'),
   location: Yup.string().required('Location is required'),
-  client: Yup.string().required('Client is required'),
+  client: Yup.string().nullable().optional(),
 })
 
 export const customerSchema = Yup.object({

@@ -189,25 +189,25 @@ export const ExpensesPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Expense' : 'Add Expense'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Category" error={errors.category?.message} required>
-            <Select register={register('category')} error={errors.category}>
+            <Select {...register('category')} error={errors.category}>
               <option value="">Select category</option>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
           </FormField>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Date" error={errors.date?.message} required>
-              <Input register={register('date')} error={errors.date} type="date" />
+              <Input {...register('date')} error={errors.date} type="date" />
             </FormField>
             <FormField label="Bill Number" error={errors.billNumber?.message} required>
-              <Input register={register('billNumber')} error={errors.billNumber} placeholder="Bill number" />
+              <Input {...register('billNumber')} error={errors.billNumber} placeholder="Bill number" />
             </FormField>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Amount (₹)" error={errors.amount?.message} required>
-              <Input register={register('amount', { valueAsNumber: true })} error={errors.amount} type="number" placeholder="Amount" />
+              <Input {...register('amount', { valueAsNumber: true })} error={errors.amount} type="number" placeholder="Amount" />
             </FormField>
             <FormField label="Tax Amount (₹)" error={errors.taxAmount?.message} required>
-              <Input register={register('taxAmount', { valueAsNumber: true })} error={errors.taxAmount} type="number" placeholder="Tax amount" />
+              <Input {...register('taxAmount', { valueAsNumber: true })} error={errors.taxAmount} type="number" placeholder="Tax amount" />
             </FormField>
           </div>
           {(watch('amount') || watch('taxAmount')) && (
@@ -218,7 +218,7 @@ export const ExpensesPage = () => {
             </div>
           )}
           <FormField label="Description" error={errors.description?.message} required>
-            <Textarea register={register('description')} error={errors.description} placeholder="Describe this expense" />
+            <Textarea {...register('description')} error={errors.description} placeholder="Describe this expense" />
           </FormField>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>

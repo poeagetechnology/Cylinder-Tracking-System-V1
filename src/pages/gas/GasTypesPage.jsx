@@ -134,7 +134,7 @@ export const GasTypesPage = () => {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Gas Type' : 'Add Gas Type'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <FormField label="Gas Name" error={errors.gasName?.message} required>
-            <Input register={register('gasName')} error={errors.gasName} placeholder="e.g. Oxygen, Nitrogen" />
+            <Input {...register('gasName')} error={errors.gasName} placeholder="e.g. Oxygen, Nitrogen" />
           </FormField>
 
           <div>
