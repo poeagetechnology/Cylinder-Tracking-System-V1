@@ -98,6 +98,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Filling Purchases — admin+ can read/write
+    match /fillingPurchases/{docId} {
+      allow read, write: if isAdmin();
+    }
+
     // Sales — admin+ can read/write
     match /sales/{docId} {
       allow read, write: if isAdmin();

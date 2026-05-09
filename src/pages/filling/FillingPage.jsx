@@ -16,7 +16,7 @@ export const FillingPage = () => {
   const { userProfile } = useAuth()
   const { data: fillings, loading } = useFirestoreCollection('fillings')
   const { data: cylinders } = useFirestoreCollection('cylinders')
-  const { data: purchases } = useFirestoreCollection('purchases')
+  const { data: fillingPurchases } = useFirestoreCollection('fillingPurchases')
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [cylinderSearch, setCylinderSearch] = useState('')
@@ -42,14 +42,16 @@ export const FillingPage = () => {
   const [balance, setBalance] = useState('0.00')
   const currentAmount = purchaseForm.watch('currentAmount')
   const paidAmount = purchaseForm.watch('paidAmount')
-  
+  const gstPercent = purchaseForm.watch('gst') || 0
+
   useEffect(() => {
     const amount = parseFloat(currentAmount) || 0
     const paid = parseFloat(paidAmount) || 0
-    setBalance((amount - paid).toFixed(2))
-  }, [currentAmount, paidAmount])
-  // Filter purchases for filling only
-  const fillingPurchases = purchases.filter(p => p.forFilling)
+    const gstAmount = (amount * gstPercent) / 100
+    const totalAmount = amount + gstAmount
+    setBalance((totalAmount - paid).toFixed(2))
+  }, [currentAmount, paidAmount, gstPercent])
+  // Filter purchases for filling only (no longer needed since we have separate collection)
   const { rows: purchaseRows } = useTable(fillingPurchases, ['supplierName', 'dcNumber'], 10)
 
   // Purchase columns
@@ -58,9 +60,11 @@ export const FillingPage = () => {
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
+    { key: 'gst', label: 'GST %' },
+    { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount) },
+    { key: 'totalAmount', label: 'Total Amount (₹)', render: (row) => fmtCurrency(row.totalAmount) },
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
-    { key: 'gst', label: 'GST %' },
     { key: 'recordedBy', label: 'By' },
   ]
   // Purchase modal handlers
@@ -98,9 +102,10 @@ export const FillingPage = () => {
       })
       const currentAmount = parseFloat(data.currentAmount) || 0
       const paidAmount = parseFloat(data.paidAmount) || 0
-      const balanceAmount = currentAmount - paidAmount
       const gst = data.gst || 0
       const gstAmount = (currentAmount * gst) / 100
+      const totalAmount = currentAmount + gstAmount
+      const balanceAmount = totalAmount - paidAmount
       const purchaseData = {
         supplierName: data.supplierName,
         date: data.date || new Date().toISOString().split('T')[0],
@@ -115,9 +120,8 @@ export const FillingPage = () => {
         notes: data.notes,
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
-        forFilling: true,
       }
-      await addDocument('purchases', purchaseData)
+      await addDocument('fillingPurchases', purchaseData)
       toast.success('Purchase recorded for Filling')
       resetPurchaseModal()
     } catch (err) {
@@ -378,8 +382,9 @@ export const FillingPage = () => {
           </FormField>
           
           {(purchaseForm.watch('currentAmount') || purchaseForm.watch('gst')) && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
-              <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-700">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Calculation Preview</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-gray-600 dark:text-gray-400">Amount</p>
                   <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(purchaseForm.watch('currentAmount') || 0).toFixed(2)}</p>
@@ -391,6 +396,16 @@ export const FillingPage = () => {
                 <div>
                   <p className="text-gray-600 dark:text-gray-400">Total Amount</p>
                   <p className="font-semibold text-blue-700 dark:text-blue-300">₹{(parseFloat(purchaseForm.watch('currentAmount') || 0) + ((purchaseForm.watch('currentAmount') || 0) * (purchaseForm.watch('gst') || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Paid Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(purchaseForm.watch('paidAmount') || 0).toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-blue-300 dark:border-blue-600">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Balance (Total - Paid)</span>
+                  <span className="font-bold text-lg text-red-600 dark:text-red-400">₹{balance}</span>
                 </div>
               </div>
             </div>

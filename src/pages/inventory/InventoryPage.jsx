@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
@@ -92,6 +92,13 @@ export const InventoryPage = () => {
   const [cylinderSearch, setCylinderSearch] = useState('')
   const [supplierSearch, setSupplierSearch] = useState('')
   const [customerSearch, setCustomerSearch] = useState('')
+  const [purchaseBalance, setPurchaseBalance] = useState('0.00')
+  const [saleBalance, setSaleBalance] = useState('0.00')
+  const [purchaseGstPreview, setPurchaseGstPreview] = useState(0)
+  const [saleGstPreview, setSaleGstPreview] = useState(0)
+  const [selectedSaleCustomer, setSelectedSaleCustomer] = useState(null)
+  const [saleCustomerRateDisplay, setSaleCustomerRateDisplay] = useState(null)
+  const [saleCustomerAllRates, setSaleCustomerAllRates] = useState(null)
 
   const purchaseForm = useForm({
     resolver: yupResolver(purchaseSchema),
@@ -121,6 +128,92 @@ export const InventoryPage = () => {
     },
   })
 
+  const getCustomerRateForCylinder = (customer, cylinder) => {
+    if (!customer || !customer.gasTypeWiseRate || !cylinder) return null
+    return customer.gasTypeWiseRate.find((rate) =>
+      rate.gasTypeId === cylinder.gasTypeId && String(rate.capacity) === String(cylinder.capacity)
+    )
+  }
+
+  const populateSaleAmountFromCustomer = (customer) => {
+    if (!customer) {
+      setSaleCustomerRateDisplay(null)
+      setSaleCustomerAllRates(null)
+      return
+    }
+
+    // Store all customer rates for reference
+    if (customer.gasTypeWiseRate && customer.gasTypeWiseRate.length > 0) {
+      setSaleCustomerAllRates(customer.gasTypeWiseRate)
+    }
+
+    const selectedCylinders = saleForm.watch('cylinders') || []
+    const selectedCylinderIds = selectedCylinders.filter(c => c.cylinderId).map(c => c.cylinderId)
+
+    if (selectedCylinderIds.length === 0) {
+      // Show first available customer rate when no cylinders selected
+      if (customer.gasTypeWiseRate && customer.gasTypeWiseRate.length > 0) {
+        const firstRate = customer.gasTypeWiseRate[0]
+        const rawAmount = parseFloat(firstRate.rate) || 0
+        const gstPercent = parseFloat(firstRate.gst) || 0
+        const gstAmount = (rawAmount * gstPercent) / 100
+        const totalAmount = rawAmount + gstAmount
+
+        saleForm.setValue('currentAmount', rawAmount.toFixed(2))
+        saleForm.setValue('gst', gstPercent)
+
+        setSaleCustomerRateDisplay({
+          rawAmount: rawAmount.toFixed(2),
+          gstPercent: gstPercent,
+          gstAmount: gstAmount.toFixed(2),
+          totalAmount: totalAmount.toFixed(2),
+          cylinderCount: 0,
+          isDefault: true
+        })
+      }
+      return
+    }
+
+    // Calculate rates from selected cylinders
+    const rates = selectedCylinders
+      .map((item) => cylinders.find((c) => c.id === item.cylinderId))
+      .filter(Boolean)
+      .map((cylinder) => getCustomerRateForCylinder(customer, cylinder))
+      .filter(Boolean)
+
+    if (rates.length === 0) {
+      setSaleCustomerRateDisplay(null)
+      return
+    }
+
+    const rawAmount = rates.reduce((sum, rate) => {
+      return sum + (parseFloat(rate.rate) || 0)
+    }, 0)
+    const gstPercent = rates[0].gst || 0
+    const gstAmount = (rawAmount * gstPercent) / 100
+    const totalAmount = rawAmount + gstAmount
+
+    saleForm.setValue('currentAmount', rawAmount.toFixed(2))
+    saleForm.setValue('gst', gstPercent)
+
+    setSaleCustomerRateDisplay({
+      rawAmount: rawAmount.toFixed(2),
+      gstPercent: gstPercent,
+      gstAmount: gstAmount.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      cylinderCount: rates.length,
+      isDefault: false
+    })
+  }
+
+  useEffect(() => {
+    if (selectedSaleCustomer) {
+      populateSaleAmountFromCustomer(selectedSaleCustomer)
+    } else {
+      setSaleCustomerRateDisplay(null)
+    }
+  }, [selectedSaleCustomer, saleForm.watch('cylinders')])
+
   const emptyReturnForm = useForm({
     resolver: yupResolver(emptyReturnSchema),
     defaultValues: { 
@@ -148,6 +241,43 @@ export const InventoryPage = () => {
   const filteredCylindersForSearch = cylinderSearch
     ? cylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase()))
     : []
+
+  // Watch form values for purchase
+  const purchaseCurrentAmount = purchaseForm.watch('currentAmount')
+  const purchasePaidAmount = purchaseForm.watch('paidAmount')
+  const purchaseGst = purchaseForm.watch('gst')
+
+  // Calculate purchase balance
+  useEffect(() => {
+    const amount = parseFloat(purchaseCurrentAmount) || 0
+    const paid = parseFloat(purchasePaidAmount) || 0
+    const gstPercent = parseFloat(purchaseGst) || 0
+    const gstAmount = (amount * gstPercent) / 100
+    const totalAmount = amount + gstAmount
+    setPurchaseBalance((totalAmount - paid).toFixed(2))
+  }, [purchaseCurrentAmount, purchasePaidAmount, purchaseGst])
+
+  // Watch form values for sale
+  const saleCurrentAmount = saleForm.watch('currentAmount')
+  const salePaidAmount = saleForm.watch('paidAmount')
+  const saleGst = saleForm.watch('gst')
+  const saleCylinders = saleForm.watch('cylinders')
+
+  // Calculate sale balance
+  useEffect(() => {
+    const amount = parseFloat(saleCurrentAmount) || 0
+    const paid = parseFloat(salePaidAmount) || 0
+    const gstPercent = parseFloat(saleGst) || 0
+    const gstAmount = (amount * gstPercent) / 100
+    const totalAmount = amount + gstAmount
+    setSaleBalance((totalAmount - paid).toFixed(2))
+  }, [saleCurrentAmount, salePaidAmount, saleGst])
+
+  useEffect(() => {
+    if (selectedSaleCustomer) {
+      populateSaleAmountFromCustomer(selectedSaleCustomer)
+    }
+  }, [selectedSaleCustomer, saleCylinders])
 
   const filteredSuppliers = supplierSearch
     ? suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase()))
@@ -260,20 +390,24 @@ export const InventoryPage = () => {
         }
       })
 
-      const balanceAmount = data.currentAmount - data.paidAmount
-      const gstAmount = (data.currentAmount * (data.gst || 0)) / 100
+      const currentAmount = parseFloat(data.currentAmount) || 0
+      const paidAmount = parseFloat(data.paidAmount) || 0
+      const gst = data.gst || 0
+      const gstAmount = (currentAmount * gst) / 100
+      const totalAmount = currentAmount + gstAmount
+      const balanceAmount = totalAmount - paidAmount
 
       await addDocument('purchases', {
         supplierName: data.supplierName,
         date: data.date,
         dcNumber: data.dcNumber,
         cylinders: cylindersList,
-        currentAmount: parseFloat(data.currentAmount),
-        paidAmount: parseFloat(data.paidAmount),
+        currentAmount: currentAmount,
+        paidAmount: paidAmount,
         balanceAmount: balanceAmount,
         gst: data.gst || 0,
         gstAmount: gstAmount,
-        totalAmount: parseFloat(data.currentAmount) + gstAmount,
+        totalAmount: currentAmount + gstAmount,
         notes: data.notes,
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
@@ -331,20 +465,24 @@ export const InventoryPage = () => {
         return
       }
 
-      const balanceAmount = data.currentAmount - data.paidAmount
-      const gstAmount = (data.currentAmount * (data.gst || 0)) / 100
+      const currentAmount = parseFloat(data.currentAmount) || 0
+      const paidAmount = parseFloat(data.paidAmount) || 0
+      const gst = data.gst || 0
+      const gstAmount = (currentAmount * gst) / 100
+      const totalAmount = currentAmount + gstAmount
+      const balanceAmount = totalAmount - paidAmount
 
       await addDocument('sales', {
         customerName: data.customerName,
         date: data.date,
         dcNumber: data.dcNumber,
         cylinders: cylindersList,
-        currentAmount: parseFloat(data.currentAmount),
-        paidAmount: parseFloat(data.paidAmount),
+        currentAmount: currentAmount,
+        paidAmount: paidAmount,
         balanceAmount: balanceAmount,
         gst: data.gst || 0,
         gstAmount: gstAmount,
-        totalAmount: parseFloat(data.currentAmount) + gstAmount,
+        totalAmount: currentAmount + gstAmount,
         notes: data.notes,
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
@@ -475,6 +613,8 @@ export const InventoryPage = () => {
   // Reset functions
   const resetPurchaseModal = () => {
     setPurchaseModal(false)
+    setPurchaseBalance('0.00')
+    setPurchaseGstPreview(0)
     setCylinderSearch('')
     setSupplierSearch('')
     purchaseForm.reset({
@@ -491,8 +631,13 @@ export const InventoryPage = () => {
 
   const resetSaleModal = () => {
     setSaleModal(false)
+    setSaleBalance('0.00')
+    setSaleGstPreview(0)
     setCylinderSearch('')
     setCustomerSearch('')
+    setSelectedSaleCustomer(null)
+    setSaleCustomerRateDisplay(null)
+    setSaleCustomerAllRates(null)
     saleForm.reset({
       customerName: '',
       date: new Date().toISOString().split('T')[0],
@@ -553,8 +698,9 @@ export const InventoryPage = () => {
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
-    { key: 'gst', label: 'Tax %' },
-    { key: 'gstAmount', label: 'Tax Amount (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
+    { key: 'gst', label: 'GST %' },
+    { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
+    { key: 'totalAmount', label: 'Total Amount (₹)', render: (row) => fmtCurrency(row.totalAmount || 0) },
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
@@ -565,8 +711,9 @@ export const InventoryPage = () => {
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
-    { key: 'gst', label: 'Tax %' },
-    { key: 'gstAmount', label: 'Tax Amount (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
+    { key: 'gst', label: 'GST %' },
+    { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
+    { key: 'totalAmount', label: 'Total Amount (₹)', render: (row) => fmtCurrency(row.totalAmount || 0) },
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
@@ -764,7 +911,12 @@ export const InventoryPage = () => {
               <Input register={purchaseForm.register('date')} error={purchaseForm.formState.errors.date} type="date" />
             </FormField>
             <FormField label="DC Number" error={purchaseForm.formState.errors.dcNumber?.message} required>
-              <Input register={purchaseForm.register('dcNumber')} error={purchaseForm.formState.errors.dcNumber} placeholder="DC Number" />
+              <input
+                type="text"
+                placeholder="DC Number"
+                className="input-field"
+                {...purchaseForm.register('dcNumber')}
+              />
             </FormField>
           </div>
 
@@ -837,41 +989,85 @@ export const InventoryPage = () => {
           {/* Payment */}
           <div className="grid grid-cols-3 gap-2">
             <FormField label="Amount (₹)" error={purchaseForm.formState.errors.currentAmount?.message} required>
-              <Input
-                register={purchaseForm.register('currentAmount')}
-                error={purchaseForm.formState.errors.currentAmount}
+              <input
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
+                className="input-field"
+                {...purchaseForm.register('currentAmount')}
+                onChange={(e) => {
+                  purchaseForm.setValue('currentAmount', e.target.value)
+                }}
               />
             </FormField>
             <FormField label="Paid (₹)" error={purchaseForm.formState.errors.paidAmount?.message} required>
-              <Input
-                register={purchaseForm.register('paidAmount')}
-                error={purchaseForm.formState.errors.paidAmount}
+              <input
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
+                className="input-field"
+                {...purchaseForm.register('paidAmount')}
+                onChange={(e) => {
+                  purchaseForm.setValue('paidAmount', e.target.value)
+                }}
               />
             </FormField>
             <FormField label="Balance (₹)">
-              <Input
-                value={
-                  purchaseForm.watch('currentAmount') && purchaseForm.watch('paidAmount')
-                    ? (parseFloat(purchaseForm.watch('currentAmount')) - parseFloat(purchaseForm.watch('paidAmount'))).toFixed(2)
-                    : '0.00'
-                }
-                disabled
+              <input
                 type="number"
+                value={purchaseBalance}
+                disabled
+                className="input-field bg-gray-100 dark:bg-gray-700"
               />
             </FormField>
           </div>
 
           <FormField label="GST %" error={purchaseForm.formState.errors.gst?.message}>
-            <Input register={purchaseForm.register('gst')} type="number" min="0" max="100" step="0.01" placeholder="0" />
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="0"
+              className="input-field"
+              {...purchaseForm.register('gst')}
+              onChange={(e) => {
+                purchaseForm.setValue('gst', e.target.value)
+              }}
+            />
           </FormField>
+
+          {(purchaseCurrentAmount || purchaseGst) && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-700">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Calculation Preview</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(purchaseCurrentAmount || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Tax ({purchaseGst || 0}%)</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{(((purchaseCurrentAmount || 0) * (purchaseGst || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Total Amount</p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">₹{(parseFloat(purchaseCurrentAmount || 0) + ((purchaseCurrentAmount || 0) * (purchaseGst || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Paid Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(purchasePaidAmount || 0).toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-blue-300 dark:border-blue-600">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Balance (Total - Paid)</span>
+                  <span className="font-bold text-lg text-red-600 dark:text-red-400">₹{purchaseBalance}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <FormField label="Notes">
             <Textarea register={purchaseForm.register('notes')} placeholder="Optional notes" rows="2" />
@@ -897,7 +1093,17 @@ export const InventoryPage = () => {
                 value={saleForm.watch('customerName') || customerSearch}
                 onChange={(e) => {
                   setCustomerSearch(e.target.value)
-                  if (!e.target.value) saleForm.setValue('customerName', '')
+                  if (!e.target.value) {
+                    saleForm.setValue('customerName', '')
+                    saleForm.setValue('currentAmount', '')
+                    saleForm.setValue('gst', 0)
+                    saleForm.setValue('paidAmount', '')
+                    setSelectedSaleCustomer(null)
+                    setSaleCustomerRateDisplay(null)
+                    setSaleCustomerAllRates(null)
+                  } else {
+                    setSelectedSaleCustomer(null)
+                  }
                 }}
                 className="input-field pl-10"
               />
@@ -909,7 +1115,9 @@ export const InventoryPage = () => {
                       type="button"
                       onClick={() => {
                         saleForm.setValue('customerName', c.name)
+                        saleForm.setValue('paidAmount', '')
                         setCustomerSearch('')
+                        setSelectedSaleCustomer(c)
                       }}
                       className={`w-full text-left px-3 py-2 text-sm ${
                         saleForm.watch('customerName') === c.name
@@ -925,12 +1133,46 @@ export const InventoryPage = () => {
             </div>
           </FormField>
 
+          {/* Customer Rate Breakdown */}
+          {saleCustomerRateDisplay && (
+            <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-700">
+              <h4 className="text-sm font-semibold text-green-700 dark:text-green-300 mb-2">
+                {saleCustomerRateDisplay.isDefault 
+                  ? '✓ Customer Default Rate' 
+                  : `✓ Customer Rates Matched (${saleCustomerRateDisplay.cylinderCount} cylinder${saleCustomerRateDisplay.cylinderCount !== 1 ? 's' : ''})`
+                }
+              </h4>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Rate Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{saleCustomerRateDisplay.rawAmount}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">GST ({saleCustomerRateDisplay.gstPercent}%)</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{saleCustomerRateDisplay.gstAmount}</p>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-green-300 dark:border-green-600">
+                  <p className="text-gray-600 dark:text-gray-400">Total Rate (Amount + GST)</p>
+                  <p className="font-bold text-lg text-green-700 dark:text-green-300">₹{saleCustomerRateDisplay.totalAmount}</p>
+                </div>
+              </div>
+              {saleCustomerRateDisplay.isDefault && (
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">Select cylinders to refine rates. Fields auto-filled above.</p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Date" error={saleForm.formState.errors.date?.message} required>
               <Input register={saleForm.register('date')} error={saleForm.formState.errors.date} type="date" />
             </FormField>
             <FormField label="DC Number" error={saleForm.formState.errors.dcNumber?.message} required>
-              <Input register={saleForm.register('dcNumber')} error={saleForm.formState.errors.dcNumber} placeholder="DC Number" />
+              <input
+                type="text"
+                placeholder="DC Number"
+                className="input-field"
+                {...saleForm.register('dcNumber')}
+              />
             </FormField>
           </div>
 
@@ -1003,41 +1245,85 @@ export const InventoryPage = () => {
           {/* Payment */}
           <div className="grid grid-cols-3 gap-2">
             <FormField label="Amount (₹)" error={saleForm.formState.errors.currentAmount?.message} required>
-              <Input
-                register={saleForm.register('currentAmount')}
-                error={saleForm.formState.errors.currentAmount}
+              <input
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
+                className="input-field"
+                {...saleForm.register('currentAmount')}
+                onChange={(e) => {
+                  saleForm.setValue('currentAmount', e.target.value)
+                }}
               />
             </FormField>
             <FormField label="Paid (₹)" error={saleForm.formState.errors.paidAmount?.message} required>
-              <Input
-                register={saleForm.register('paidAmount')}
-                error={saleForm.formState.errors.paidAmount}
+              <input
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="0.00"
+                className="input-field"
+                {...saleForm.register('paidAmount')}
+                onChange={(e) => {
+                  saleForm.setValue('paidAmount', e.target.value)
+                }}
               />
             </FormField>
             <FormField label="Balance (₹)">
-              <Input
-                value={
-                  saleForm.watch('currentAmount') && saleForm.watch('paidAmount')
-                    ? (parseFloat(saleForm.watch('currentAmount')) - parseFloat(saleForm.watch('paidAmount'))).toFixed(2)
-                    : '0.00'
-                }
-                disabled
+              <input
                 type="number"
+                value={saleBalance}
+                disabled
+                className="input-field bg-gray-100 dark:bg-gray-700"
               />
             </FormField>
           </div>
 
           <FormField label="GST %" error={saleForm.formState.errors.gst?.message}>
-            <Input register={saleForm.register('gst')} type="number" min="0" max="100" step="0.01" placeholder="0" />
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="0"
+              className="input-field"
+              {...saleForm.register('gst')}
+              onChange={(e) => {
+                saleForm.setValue('gst', e.target.value)
+              }}
+            />
           </FormField>
+
+          {(saleCurrentAmount || saleGst) && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-700">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Calculation Preview</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(saleCurrentAmount || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Tax ({saleGst || 0}%)</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{(((saleCurrentAmount || 0) * (saleGst || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Total Amount</p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">₹{(parseFloat(saleCurrentAmount || 0) + ((saleCurrentAmount || 0) * (saleGst || 0)) / 100).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Paid Amount</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">₹{parseFloat(salePaidAmount || 0).toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-blue-300 dark:border-blue-600">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Balance (Total - Paid)</span>
+                  <span className="font-bold text-lg text-red-600 dark:text-red-400">₹{saleBalance}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <FormField label="Notes">
             <Textarea register={saleForm.register('notes')} placeholder="Optional notes" rows="2" />
@@ -1097,7 +1383,12 @@ export const InventoryPage = () => {
               <Input register={emptyReturnForm.register('date')} error={emptyReturnForm.formState.errors.date} type="date" />
             </FormField>
             <FormField label="DC Number" error={emptyReturnForm.formState.errors.dcNumber?.message} required>
-              <Input register={emptyReturnForm.register('dcNumber')} error={emptyReturnForm.formState.errors.dcNumber} placeholder="DC Number" />
+              <input
+                type="text"
+                placeholder="DC Number"
+                className="input-field"
+                {...emptyReturnForm.register('dcNumber')}
+              />
             </FormField>
           </div>
 
@@ -1226,7 +1517,12 @@ export const InventoryPage = () => {
               <Input register={loadReturnForm.register('date')} error={loadReturnForm.formState.errors.date} type="date" />
             </FormField>
             <FormField label="DC Number" error={loadReturnForm.formState.errors.dcNumber?.message} required>
-              <Input register={loadReturnForm.register('dcNumber')} error={loadReturnForm.formState.errors.dcNumber} placeholder="DC Number" />
+              <input
+                type="text"
+                placeholder="DC Number"
+                className="input-field"
+                {...loadReturnForm.register('dcNumber')}
+              />
             </FormField>
           </div>
 

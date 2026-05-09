@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { ArrowRight, CalendarRange, Download, FileSpreadsheet, FilterX, SearchX, TrendingUp, TrendingDown, BarChart3, Package, Users, FileJson } from 'lucide-react'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { exportToCSV, exportToExcel, fmtDate, toDate, fmtCurrency } from '../../utils/helpers'
@@ -676,6 +676,17 @@ export const ReportsPage = () => {
     return Array.from(values).sort((left, right) => left.localeCompare(right))
   }, [cylinders, records])
 
+  // Set default customer and cylinder when movements report is activated
+  useEffect(() => {
+    if (activeReport === 'movements') {
+      setFilters((current) => ({
+        ...current,
+        client: '',
+        cylinderCode: '',
+      }))
+    }
+  }, [activeReport])
+
   const filteredRecords = useMemo(() => {
     if (!hasGenerated || activeReport !== 'movements') return []
 
@@ -695,8 +706,8 @@ export const ReportsPage = () => {
 
       if (appliedFilters.gasType && record.gasType !== appliedFilters.gasType) return false
       if (appliedFilters.movementType && record.movementType !== appliedFilters.movementType) return false
-      if (appliedFilters.client && record.client !== appliedFilters.client) return false
-      if (appliedFilters.cylinderCode && record.cylinderCode !== appliedFilters.cylinderCode) return false
+      if (appliedFilters.client && appliedFilters.client !== 'all' && record.client !== appliedFilters.client) return false
+      if (appliedFilters.cylinderCode && appliedFilters.cylinderCode !== 'all' && record.cylinderCode !== appliedFilters.cylinderCode) return false
 
       return true
     })
@@ -945,7 +956,8 @@ export const ReportsPage = () => {
                 onChange={handleFilterChange('client')}
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
-                <option value="">All Customers</option>
+                <option value="">Select Customer</option>
+                <option value="all">All Customers</option>
                 {clientOptions.map((client) => (
                   <option key={client} value={client}>{client}</option>
                 ))}
@@ -958,7 +970,8 @@ export const ReportsPage = () => {
                 onChange={handleFilterChange('cylinderCode')}
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
-                <option value="">All Cylinders</option>
+                <option value="">Select cylinder</option>
+                <option value="all">All Cylinders</option>
                 {cylinderOptions.map((cylinderCode) => (
                   <option key={cylinderCode} value={cylinderCode}>{cylinderCode}</option>
                 ))}

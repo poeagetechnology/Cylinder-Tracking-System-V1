@@ -162,7 +162,7 @@ export const CustomersPage = () => {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Customer' : 'Add Customer'}>
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editItem ? 'Edit Customer' : 'Add Customer'} size="xl">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
 
           <FormField label="Full Name" error={errors.name?.message} required>
@@ -193,15 +193,15 @@ export const CustomersPage = () => {
             <h3 className="font-semibold text-sm mb-3">Gas Type & Capacity Wise Rate</h3>
             {rateFields.length > 0 && (
               <div className="overflow-x-auto mb-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <table className="w-full text-sm">
+                <table className="min-w-full table-fixed text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                     <tr>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">GAS</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">CAPACITY</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">RATE</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">GST %</th>
-                      <th className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300">TOTAL RATE</th>
-                      <th className="px-3 py-2 text-center font-semibold text-gray-700 dark:text-gray-300">ACTION</th>
+                      <th className="w-2/12 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">GAS</th>
+                      <th className="w-2/12 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">CAPACITY</th>
+                      <th className="w-2/12 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">RATE</th>
+                      <th className="w-2/12 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">GST %</th>
+                      <th className="w-3/12 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">TOTAL RATE</th>
+                      <th className="w-1/12 px-3 py-2 text-center font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">ACTION</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -213,16 +213,16 @@ export const CustomersPage = () => {
                       const totalRate = rate + (rate * gst / 100)
                       
                       return (
-                        <tr key={field.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                          <td className="px-3 py-2">
-                            <Select {...register(`gasTypeWiseRate.${idx}.gasTypeId`)}>
+                        <tr key={field.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 align-middle">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
+                            <Select {...register(`gasTypeWiseRate.${idx}.gasTypeId`)} className="w-full">
                               <option value="">Select gas</option>
                               {gasTypes.map(g => (
                                 <option key={g.id} value={g.id}>{g.gasName}</option>
                               ))}
                             </Select>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
                             <select
                               {...register(`gasTypeWiseRate.${idx}.capacity`)}
                               className="input-field w-full"
@@ -234,7 +234,7 @@ export const CustomersPage = () => {
                               })}
                             </select>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
                             <Input
                               {...register(`gasTypeWiseRate.${idx}.rate`, { valueAsNumber: true })}
                               type="number"
@@ -244,7 +244,7 @@ export const CustomersPage = () => {
                               className="w-full"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 align-middle whitespace-nowrap">
                             <Input
                               {...register(`gasTypeWiseRate.${idx}.gst`, { valueAsNumber: true })}
                               type="number"
@@ -255,10 +255,10 @@ export const CustomersPage = () => {
                               className="w-full"
                             />
                           </td>
-                          <td className="px-3 py-2 text-center font-semibold text-blue-600 dark:text-blue-400">
+                          <td className="px-3 py-2 text-center align-middle font-semibold text-blue-600 dark:text-blue-400 whitespace-nowrap">
                             ₹{totalRate.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => removeRate(idx)}

@@ -313,14 +313,12 @@ export const CylindersPage = () => {
             </Select>
           </FormField>
 
-          {watch('status') === 'maintenance' && (
-            <FormField label="Client" error={errors.client?.message}>
-              <Select {...register('client')} error={errors.client}>
-                <option value="">Select company</option>
-                {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </Select>
-            </FormField>
-          )}
+          <FormField label="Client" error={errors.client?.message}>
+            <Select {...register('client')} error={errors.client}>
+              <option value="">Select company</option>
+              {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </Select>
+          </FormField>
 
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
