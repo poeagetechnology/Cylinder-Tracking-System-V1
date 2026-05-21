@@ -33,19 +33,22 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // Users — admin+ can list/update all; users can read their own
+    // Users — admin+ can list/update all; users can read/update safe profile fields on their own
     match /users/{userId} {
       allow list: if isAdmin();
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       allow create: if isAuthenticated();
-      allow update: if isAdmin() || request.auth.uid == userId;
+      allow update: if isAdmin() || (
+        request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status', 'approvedBy', 'approvedAt'])
+      );
       allow delete: if isSuperAdmin();
     }
 
-    // Cylinders — all approved users can read; admin+ can write
+    // Cylinders — all approved users can read/write from accessible operational pages
     match /cylinders/{docId} {
       allow read: if isApproved();
-      allow write: if isAdmin();
+      allow write: if isApproved();
     }
 
     // Gas Types
@@ -54,11 +57,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Fillings — all approved users can read/create; admin+ can update/delete
+    // Fillings — all approved users can read/write; deletes are represented as void metadata in the app
     match /fillings/{docId} {
       allow read: if isApproved();
       allow create: if isApproved();
-      allow update, delete: if isAdmin();
+      allow update, delete: if isApproved();
     }
 
     // Inventory — all approved
@@ -67,7 +70,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Customers, Suppliers, Vehicles, HR, Expenses — admin only
+    // Customers, Suppliers, Vehicles, HR, Expenses — admin only routes
     match /customers/{docId} {
       allow read, write: if isAdmin();
     }
@@ -93,19 +96,34 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Purchases — admin+ can read/write
+    // Purchases — all approved users can read/write from accessible inventory pages
     match /purchases/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isApproved();
     }
 
-    // Filling Purchases — admin+ can read/write
+    // Filling Purchases — all approved users can read/write from accessible filling pages
     match /fillingPurchases/{docId} {
+      allow read, write: if isApproved();
+    }
+
+    // Sales — all approved users can read/write from accessible inventory pages
+    match /sales/{docId} {
+      allow read, write: if isApproved();
+    }
+
+    match /branches/{docId} {
       allow read, write: if isAdmin();
     }
 
-    // Sales — admin+ can read/write
-    match /sales/{docId} {
-      allow read, write: if isAdmin();
+    match /stockTransactions/{docId} {
+      allow read, create: if isApproved();
+      allow update, delete: if isSuperAdmin();
+    }
+
+    match /auditLogs/{docId} {
+      allow read: if isAdmin();
+      allow create: if isApproved();
+      allow update, delete: if false;
     }
 
     // Areas — admin+ can read; superadmin can write
@@ -119,21 +137,21 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Movements (Cylinder IN/OUT) — all approved users can read/create; admin+ can update/delete
+    // Movements (Cylinder IN/OUT) — all approved users can read/create/update for accessible inventory pages
     match /movements/{docId} {
       allow read: if isApproved();
       allow create: if isApproved();
-      allow update, delete: if isAdmin();
+      allow update, delete: if isApproved();
     }
 
-    // Empty Returns (Customer returns empty cylinders) — admin+ can read/write
+    // Empty Returns (Customer returns empty cylinders) — all approved users can read/write from accessible inventory pages
     match /emptyReturns/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isApproved();
     }
 
-    // Load Returns (Fault cylinder returns) — admin+ can read/write
+    // Load Returns (Fault cylinder returns) — all approved users can read/write from accessible inventory pages
     match /loadReturns/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isApproved();
     }
   }
 }

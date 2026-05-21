@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { Plus, Play, Square, Wind, Search } from 'lucide-react'
+import { Plus, Play, Square, Wind, Search, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { addDocument, updateDocument } from '../../services/firestoreService'
 import { Table } from '../../components/ui/Table'
 import { Modal } from '../../components/ui/Modal'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Badge } from '../../components/ui/Badge'
 import { FormField, Input, Textarea } from '../../components/ui/FormField'
 import { useTable } from '../../hooks/useTable'
@@ -19,17 +20,26 @@ import {
   getPurchaseCubicMeters,
   parseStockNumber,
 } from '../../utils/liquidOxygenStock'
+import { writeAuditLog, writeStockTransaction } from '../../utils/audit'
+import { getVoidPayload, hasDuplicateValue, normalizeText } from '../../utils/records'
 
 export const FillingPage = () => {
   const { userProfile } = useAuth()
   const { data: fillings, loading } = useFirestoreCollection('fillings')
   const { data: cylinders } = useFirestoreCollection('cylinders')
   const { data: fillingPurchases } = useFirestoreCollection('fillingPurchases')
+  const { data: stockTransactions } = useFirestoreCollection('stockTransactions')
   const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [cylinderSearch, setCylinderSearch] = useState('')
   const [selectedCylinders, setSelectedCylinders] = useState([])
   const [lessCubic, setLessCubic] = useState('')
+  const [purchaseEditItem, setPurchaseEditItem] = useState(null)
+  const [purchaseVoidItem, setPurchaseVoidItem] = useState(null)
+  const [fillingEditItem, setFillingEditItem] = useState(null)
+  const [fillingVoidItem, setFillingVoidItem] = useState(null)
+  const [editLessCubic, setEditLessCubic] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   // Purchase modal state
   const [purchaseModal, setPurchaseModal] = useState(false)
@@ -65,7 +75,7 @@ export const FillingPage = () => {
   // Filter purchases for filling only (no longer needed since we have separate collection)
   const { rows: purchaseRows } = useTable(fillingPurchases, ['supplierName', 'dcNumber', 'oxygenType'], 10)
 
-  const stockSummary = getLiquidOxygenStockSummary(fillingPurchases, fillings)
+  const stockSummary = getLiquidOxygenStockSummary(fillingPurchases, fillings, stockTransactions)
   const {
     totalCubicMeterStock,
     availableStock,
@@ -74,6 +84,22 @@ export const FillingPage = () => {
   } = stockSummary
   const purchaseStockAfter = availableStock + parseStockNumber(purchaseCubicMeters)
 
+  const openPurchaseEdit = (purchase) => {
+    setPurchaseEditItem(purchase)
+    purchaseForm.reset({
+      supplierName: purchase.supplierName || '',
+      date: purchase.date || new Date().toISOString().split('T')[0],
+      dcNumber: purchase.dcNumber || '',
+      oxygenType: purchase.oxygenType || OXYGEN_TYPE,
+      cubicMeters: getPurchaseCubicMeters(purchase),
+      currentAmount: purchase.currentAmount || '',
+      paidAmount: purchase.paidAmount || '',
+      gst: purchase.gst || 0,
+      notes: purchase.notes || '',
+    })
+    setPurchaseModal(true)
+  }
+
   // Purchase columns
   const purchaseColumns = [
     { key: 'supplierName', label: 'Supplier', sortable: true },
@@ -81,6 +107,7 @@ export const FillingPage = () => {
     { key: 'dcNumber', label: 'DC Number' },
     { key: 'oxygenType', label: 'Oxygen Type', render: (row) => row.oxygenType || OXYGEN_TYPE },
     { key: 'cubicMeters', label: 'Cubic Meters', render: (row) => formatCubicMeters(getPurchaseCubicMeters(row)) },
+    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'voided' ? 'rejected' : 'approved'} label={row.status === 'voided' ? 'Voided' : 'Active'} /> },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
     { key: 'gst', label: 'GST %' },
     { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount) },
@@ -88,10 +115,21 @@ export const FillingPage = () => {
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount) },
     { key: 'recordedBy', label: 'By' },
+    { key: 'actions', label: 'Actions', render: (row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => openPurchaseEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
+        </button>
+        <button onClick={() => setPurchaseVoidItem(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    )},
   ]
   // Purchase modal handlers
   const resetPurchaseModal = () => {
     setPurchaseModal(false)
+    setPurchaseEditItem(null)
     purchaseForm.reset({
       supplierName: '',
       date: new Date().toISOString().split('T')[0],
@@ -108,7 +146,24 @@ export const FillingPage = () => {
   const onPurchaseSubmit = async (data) => {
     setPurchaseSaving(true)
     try {
+      const supplierName = normalizeText(data.supplierName)
+      const dcNumber = normalizeText(data.dcNumber)
       const cubicMeters = parseStockNumber(data.cubicMeters)
+      if (!supplierName) {
+        toast.error('Supplier name is required')
+        setPurchaseSaving(false)
+        return
+      }
+      if (!dcNumber) {
+        toast.error('DC Number is required')
+        setPurchaseSaving(false)
+        return
+      }
+      if (hasDuplicateValue(fillingPurchases, 'dcNumber', dcNumber, purchaseEditItem?.id)) {
+        toast.error('A filling purchase with this DC Number already exists')
+        setPurchaseSaving(false)
+        return
+      }
       if (cubicMeters <= 0) {
         toast.error('Please enter cubic meters for Liquid Oxygen')
         setPurchaseSaving(false)
@@ -121,9 +176,9 @@ export const FillingPage = () => {
       const totalAmount = currentAmount + gstAmount
       const balanceAmount = totalAmount - paidAmount
       const purchaseData = {
-        supplierName: data.supplierName,
+        supplierName,
         date: data.date || new Date().toISOString().split('T')[0],
-        dcNumber: data.dcNumber,
+        dcNumber,
         oxygenType: data.oxygenType || OXYGEN_TYPE,
         cubicMeters,
         currentAmount,
@@ -132,12 +187,60 @@ export const FillingPage = () => {
         gst,
         gstAmount,
         totalAmount: currentAmount + gstAmount,
-        notes: data.notes,
+        notes: normalizeText(data.notes),
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
       }
-      await addDocument('fillingPurchases', purchaseData)
-      toast.success('Purchase recorded for Filling')
+      if (purchaseEditItem) {
+        const previousCubicMeters = getPurchaseCubicMeters(purchaseEditItem)
+        const delta = cubicMeters - previousCubicMeters
+        await updateDocument('fillingPurchases', purchaseEditItem.id, purchaseData)
+        await writeAuditLog({
+          action: 'edit',
+          collectionName: 'fillingPurchases',
+          recordId: purchaseEditItem.id,
+          recordLabel: dcNumber,
+          before: purchaseEditItem,
+          after: purchaseData,
+          quantityCubicMeters: delta,
+          userProfile,
+        })
+        if (delta !== 0) {
+          await writeStockTransaction({
+            type: delta > 0 ? 'purchase_in' : 'manual_adjustment',
+            sourceCollection: 'fillingPurchases',
+            sourceId: purchaseEditItem.id,
+            quantityCubicMeters: Math.abs(delta),
+            stockBefore: availableStock,
+            stockAfter: availableStock + delta,
+            userProfile,
+          })
+        }
+        toast.success('Purchase updated')
+      } else {
+        const id = await addDocument('fillingPurchases', purchaseData)
+        await writeStockTransaction({
+          type: 'purchase_in',
+          sourceCollection: 'fillingPurchases',
+          sourceId: id,
+          quantityCubicMeters: cubicMeters,
+          stockBefore: availableStock,
+          stockAfter: availableStock + cubicMeters,
+          userProfile,
+        })
+        await writeAuditLog({
+          action: 'stock_in',
+          collectionName: 'fillingPurchases',
+          recordId: id,
+          recordLabel: dcNumber,
+          after: purchaseData,
+          quantityCubicMeters: cubicMeters,
+          stockBefore: availableStock,
+          stockAfter: availableStock + cubicMeters,
+          userProfile,
+        })
+        toast.success('Purchase recorded for Filling')
+      }
       resetPurchaseModal()
     } catch (err) {
       toast.error('Failed to record purchase: ' + err.message)
@@ -203,7 +306,7 @@ export const FillingPage = () => {
         const totalCubicMetersUsed = cubicMetersUsed + lessCubicForRecord
         const stockBefore = runningStock
         runningStock = Math.max(runningStock - totalCubicMetersUsed, 0)
-        await addDocument('fillings', {
+        const fillingData = {
           cylinderId: cylinder.id,
           cylinderCode: cylinder?.cylinderCode,
           gasTypeName: OXYGEN_TYPE,
@@ -220,6 +323,27 @@ export const FillingPage = () => {
           duration: null,
           status: 'in_progress',
           startedBy: userProfile?.name,
+        }
+        const fillingId = await addDocument('fillings', fillingData)
+        await writeStockTransaction({
+          type: 'filling_out',
+          sourceCollection: 'fillings',
+          sourceId: fillingId,
+          quantityCubicMeters: totalCubicMetersUsed,
+          stockBefore,
+          stockAfter: runningStock,
+          userProfile,
+        })
+        await writeAuditLog({
+          action: lessCubicForRecord > 0 ? 'manual_deduction' : 'stock_out',
+          collectionName: 'fillings',
+          recordId: fillingId,
+          recordLabel: cylinder?.cylinderCode,
+          after: fillingData,
+          quantityCubicMeters: totalCubicMetersUsed,
+          stockBefore,
+          stockAfter: runningStock,
+          userProfile,
         })
         await updateDocument('cylinders', cylinder.id, { status: 'in_use' })
       }
@@ -257,6 +381,130 @@ export const FillingPage = () => {
     setCylinderSearch('')
     setSelectedCylinders([])
     setLessCubic('')
+  }
+
+  const openFillingEdit = (filling) => {
+    setFillingEditItem(filling)
+    setEditLessCubic(String(filling.lessCubic || ''))
+  }
+
+  const saveFillingEdit = async () => {
+    const newLessCubic = parseStockNumber(editLessCubic)
+    if (newLessCubic < 0) {
+      toast.error('Less Cubic cannot be negative')
+      return
+    }
+
+    const baseCubicMeters = parseStockNumber(fillingEditItem?.cubicMetersUsed ?? fillingEditItem?.capacity)
+    const previousTotal = getFillingCubicMeters(fillingEditItem)
+    const totalCubicMetersUsed = baseCubicMeters + newLessCubic
+    const delta = totalCubicMetersUsed - previousTotal
+
+    if (delta > availableStock) {
+      toast.error(`Insufficient Liquid Oxygen stock. Available: ${formatCubicMeters(availableStock)}`)
+      return
+    }
+
+    setEditSaving(true)
+    try {
+      const after = {
+        lessCubic: newLessCubic,
+        totalCubicMetersUsed,
+      }
+      await updateDocument('fillings', fillingEditItem.id, after)
+      if (delta !== 0) {
+        await writeStockTransaction({
+          type: delta > 0 ? 'less_cubic_adjustment' : 'void_reversal',
+          sourceCollection: 'fillings',
+          sourceId: fillingEditItem.id,
+          quantityCubicMeters: Math.abs(delta),
+          stockBefore: availableStock,
+          stockAfter: availableStock - delta,
+          userProfile,
+        })
+      }
+      await writeAuditLog({
+        action: 'edit',
+        collectionName: 'fillings',
+        recordId: fillingEditItem.id,
+        recordLabel: fillingEditItem.cylinderCode,
+        before: fillingEditItem,
+        after,
+        quantityCubicMeters: delta,
+        userProfile,
+      })
+      toast.success('Filling updated')
+      setFillingEditItem(null)
+      setEditLessCubic('')
+    } catch (err) {
+      toast.error('Failed to update filling: ' + err.message)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const voidPurchase = async () => {
+    const cubicMeters = getPurchaseCubicMeters(purchaseVoidItem)
+    if (cubicMeters > availableStock) {
+      toast.error('Cannot void purchase because stock has already been consumed')
+      return
+    }
+
+    try {
+      await updateDocument('fillingPurchases', purchaseVoidItem.id, getVoidPayload(userProfile))
+      await writeStockTransaction({
+        type: 'manual_adjustment',
+        sourceCollection: 'fillingPurchases',
+        sourceId: purchaseVoidItem.id,
+        quantityCubicMeters: cubicMeters,
+        stockBefore: availableStock,
+        stockAfter: availableStock - cubicMeters,
+        userProfile,
+      })
+      await writeAuditLog({
+        action: 'void',
+        collectionName: 'fillingPurchases',
+        recordId: purchaseVoidItem.id,
+        recordLabel: purchaseVoidItem.dcNumber,
+        before: purchaseVoidItem,
+        quantityCubicMeters: cubicMeters,
+        userProfile,
+      })
+      toast.success('Purchase voided')
+    } catch (err) {
+      toast.error('Failed to void purchase: ' + err.message)
+    }
+  }
+
+  const voidFilling = async () => {
+    const cubicMeters = getFillingCubicMeters(fillingVoidItem)
+    try {
+      await updateDocument('fillings', fillingVoidItem.id, getVoidPayload(userProfile))
+      if (fillingVoidItem.cylinderId) {
+        await updateDocument('cylinders', fillingVoidItem.cylinderId, { status: 'empty' })
+      }
+      await writeStockTransaction({
+        type: 'void_reversal',
+        sourceCollection: 'fillings',
+        sourceId: fillingVoidItem.id,
+        quantityCubicMeters: cubicMeters,
+        stockBefore: availableStock,
+        stockAfter: availableStock + cubicMeters,
+        userProfile,
+      })
+      await writeAuditLog({
+        action: 'void',
+        collectionName: 'fillings',
+        recordId: fillingVoidItem.id,
+        recordLabel: fillingVoidItem.cylinderCode,
+        before: fillingVoidItem,
+        quantityCubicMeters: cubicMeters,
+        userProfile,
+      })
+      toast.success('Filling voided')
+    } catch (err) {
+      toast.error('Failed to void filling: ' + err.message)
+    }
   }
 
   const handleEnd = async (filling) => {

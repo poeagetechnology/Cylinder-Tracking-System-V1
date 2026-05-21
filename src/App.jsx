@@ -20,6 +20,7 @@ import { InventoryPage } from './pages/inventory/InventoryPage'
 import { VehiclesPage } from './pages/vehicles/VehiclesPage'
 import { CustomersPage } from './pages/customers/CustomersPage'
 import { SuppliersPage } from './pages/suppliers/SuppliersPage'
+import { BranchesPage } from './pages/branches/BranchesPage'
 import { HRPage } from './pages/hr/HRPage'
 import { ExpensesPage } from './pages/expenses/ExpensesPage'
 import { ReportsPage } from './pages/reports/ReportsPage'
@@ -59,6 +60,7 @@ function AppRoutes() {
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/customers" element={<CustomersPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/branches" element={<BranchesPage />} />
             <Route path="/hr" element={<HRPage />} />
             <Route path="/expenses" element={<ExpensesPage />} />
             <Route path="/reports" element={<ReportsPage />} />

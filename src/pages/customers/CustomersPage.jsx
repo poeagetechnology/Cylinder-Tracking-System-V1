@@ -12,10 +12,12 @@ import { FormField, Input, Select, Textarea } from '../../components/ui/FormFiel
 import { useTable } from '../../hooks/useTable'
 import { customerSchema } from '../../utils/validations'
 import { fmtDate } from '../../utils/helpers'
+import { hasDuplicateValue, normalizeText } from '../../utils/records'
 
 export const CustomersPage = () => {
   const { data: customers, loading } = useFirestoreCollection('customers')
   const { data: areas } = useFirestoreCollection('areas')
+  const { data: branches } = useFirestoreCollection('branches')
   const { data: gasTypes } = useFirestoreCollection('gasTypes')
   const [modalOpen, setModalOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -30,6 +32,7 @@ export const CustomersPage = () => {
       phone: '', 
       email: '', 
       address: '', 
+      branchId: '',
       area: '',
       gasTypeWiseRate: []
     },
@@ -41,7 +44,7 @@ export const CustomersPage = () => {
   })
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
-    customers, ['name', 'phone', 'email', 'area'], 10
+    customers, ['name', 'phone', 'email', 'area', 'branchName'], 10
   )
 
   const openAdd = () => {
@@ -52,6 +55,7 @@ export const CustomersPage = () => {
       phone: '', 
       email: '', 
       address: '', 
+      branchId: '',
       area: '',
       gasTypeWiseRate: []
     })
@@ -66,6 +70,7 @@ export const CustomersPage = () => {
       phone: item.phone, 
       email: item.email || '', 
       address: item.address, 
+      branchId: item.branchId || '',
       area: item.area || '',
       gasTypeWiseRate: item.gasTypeWiseRate || []
     })
@@ -75,13 +80,20 @@ export const CustomersPage = () => {
   const onSubmit = async (data) => {
     setSaving(true)
     try {
+      if (hasDuplicateValue(customers, 'phone', data.phone, editItem?.id)) {
+        toast.error('Customer phone number already exists')
+        return
+      }
+      const selectedBranch = branches.find((branch) => branch.id === data.branchId)
       const payload = {
-        name: data.name,
-        gstNumber: data.gstNumber || '',
-        phone: data.phone,
-        email: data.email || '',
-        address: data.address,
-        area: data.area,
+        name: normalizeText(data.name),
+        gstNumber: normalizeText(data.gstNumber),
+        phone: normalizeText(data.phone),
+        email: normalizeText(data.email),
+        address: normalizeText(data.address),
+        branchId: data.branchId,
+        branchName: selectedBranch?.branchName || '',
+        area: normalizeText(data.area),
         gasTypeWiseRate: data.gasTypeWiseRate?.length > 0 ? data.gasTypeWiseRate : [],
       }
 
@@ -113,6 +125,7 @@ export const CustomersPage = () => {
     { key: 'name', label: 'Name', sortable: true },
     { key: 'phone', label: 'Phone' },
     { key: 'email', label: 'Email', render: (row) => row.email || '—' },
+    { key: 'branchName', label: 'Branch', render: (row) => row.branchName || '—' },
     { key: 'area', label: 'Area/Location', render: (row) => row.area || '—' },
     { key: 'address', label: 'Address', render: (row) => <span className="truncate max-w-xs block">{row.address}</span> },
     { key: 'createdAt', label: 'Added', render: (row) => fmtDate(row.createdAt) },
@@ -179,6 +192,15 @@ export const CustomersPage = () => {
 
           <FormField label="E Mail" error={errors.email?.message}>
             <Input {...register('email')} error={errors.email} type="email" placeholder="Optional email" />
+          </FormField>
+
+          <FormField label="Branch" error={errors.branchId?.message} required>
+            <Select {...register('branchId')} error={errors.branchId}>
+              <option value="">Select branch</option>
+              {branches
+                .filter((branch) => (branch.status || 'active') === 'active')
+                .map((branch) => <option key={branch.id} value={branch.id}>{branch.branchName} ({branch.branchCode})</option>)}
+            </Select>
           </FormField>
 
           <FormField label="Area/Location" error={errors.area?.message} required>

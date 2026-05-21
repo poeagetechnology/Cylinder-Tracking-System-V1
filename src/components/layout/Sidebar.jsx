@@ -18,6 +18,7 @@ const navItems = [
   { to: '/vehicles', icon: Truck, label: 'Vehicles', roles: ['superadmin', 'admin'] },
   { to: '/customers', icon: UserCheck, label: 'Customers', roles: ['superadmin', 'admin'] },
   { to: '/suppliers', icon: Building2, label: 'Suppliers', roles: ['superadmin', 'admin'] },
+  { to: '/branches', icon: Building2, label: 'Branch Master', roles: ['superadmin', 'admin'] },
   { to: '/hr', icon: Users, label: 'HR', roles: ['superadmin', 'admin'] },
   { to: '/expenses', icon: TrendingDown, label: 'Expenses', roles: ['superadmin', 'admin'] },
   { to: '/reports', icon: BarChart3, label: 'Stock Report', roles: ['superadmin', 'admin'] },

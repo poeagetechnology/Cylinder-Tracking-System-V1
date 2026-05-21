@@ -43,12 +43,13 @@ export const cylinderSchema = Yup.object({
 })
 
 export const customerSchema = Yup.object({
-  name: Yup.string().required('Full Name is required'),
+  name: Yup.string().trim().required('Full Name is required'),
   gstNumber: Yup.string().nullable(),
   phone: Yup.string().matches(/^\d{10}$/, 'Invalid phone number').required('Phone is required'),
   email: Yup.string().email('Invalid email').nullable(),
-  area: Yup.string().required('Area/Location is required'),
-  address: Yup.string().required('Full Address is required'),
+  branchId: Yup.string().trim().required('Branch is required'),
+  area: Yup.string().trim().required('Area/Location is required'),
+  address: Yup.string().trim().required('Full Address is required'),
   gasTypeWiseRate: Yup.array().of(
     Yup.object({
       gasTypeId: Yup.string().required('Gas type is required'),
