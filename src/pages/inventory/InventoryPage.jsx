@@ -4,7 +4,7 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { useAuth } from '../../context/AuthContext'
 import { addDocument } from '../../services/firestoreService'
-import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, ShoppingCart, TrendingUp, TrendingDown, Trash2, Search } from 'lucide-react'
+import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, TrendingUp, TrendingDown, Trash2, Search, Wind } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { Badge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
@@ -14,6 +14,7 @@ import { useTable } from '../../hooks/useTable'
 import * as Yup from 'yup'
 import toast from 'react-hot-toast'
 import { fmtDate, fmtCurrency } from '../../utils/helpers'
+import { formatCubicMeters, getLiquidOxygenStockSummary } from '../../utils/liquidOxygenStock'
 
 const ALERT_THRESHOLD = 5
 
@@ -77,6 +78,8 @@ export const InventoryPage = () => {
   const { data: cylinders, loading } = useFirestoreCollection('cylinders')
   const { data: gasTypes } = useFirestoreCollection('gasTypes')
   const { data: purchases } = useFirestoreCollection('purchases')
+  const { data: fillingPurchases } = useFirestoreCollection('fillingPurchases')
+  const { data: fillings } = useFirestoreCollection('fillings')
   const { data: sales } = useFirestoreCollection('sales')
   const { data: emptyReturns } = useFirestoreCollection('emptyReturns')
   const { data: loadReturns } = useFirestoreCollection('loadReturns')
@@ -365,9 +368,9 @@ export const InventoryPage = () => {
   const { rows: loadReturnRows } = useTable(flattenedLoadReturns, ['cylinderCode'], 10)
 
   const lowStockItems = inventoryByGas.filter((i) => i.alert && i.total > 0)
-  const totalFull = cylinders.filter((c) => c.status === 'full').length
-  const totalEmpty = cylinders.filter((c) => c.status === 'empty').length
-  const totalInUse = cylinders.filter((c) => c.status === 'in_use').length
+  const liquidOxygenStock = getLiquidOxygenStockSummary(fillingPurchases, fillings)
+  const selectedPurchaseCylinderId = purchaseForm.watch('cylinders')?.[0]?.cylinderId || ''
+  const selectedPurchaseCylinder = cylinders.find((c) => c.id === selectedPurchaseCylinderId)
 
   const onPurchaseSubmit = async (data) => {
     setSaving(true)
@@ -790,10 +793,10 @@ export const InventoryPage = () => {
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard title="Total Cylinders" value={cylinders.length} icon={Package} color="blue" />
-            <StatCard title="Full" value={totalFull} icon={CheckCircle} color="green" />
-            <StatCard title="Empty" value={totalEmpty} icon={XCircle} color="red" />
-            <StatCard title="In Use" value={totalInUse} icon={Clock} color="yellow" />
+            <StatCard title="Total Cubic Meter Stock" value={formatCubicMeters(liquidOxygenStock.totalCubicMeterStock)} icon={Package} color="blue" />
+            <StatCard title="Available Stock" value={formatCubicMeters(liquidOxygenStock.availableStock)} icon={CheckCircle} color="green" />
+            <StatCard title="Filled Quantity" value={formatCubicMeters(liquidOxygenStock.filledQuantity)} icon={Wind} color="yellow" />
+            <StatCard title="Remaining Quantity" value={formatCubicMeters(liquidOxygenStock.remainingQuantity)} icon={Clock} color="purple" />
           </div>
 
           <div className="card">
@@ -920,70 +923,64 @@ export const InventoryPage = () => {
             </FormField>
           </div>
 
-          {/* Cylinders */}
+          {/* Cylinder */}
           <div>
-            <h3 className="font-semibold text-sm mb-2">Cylinders (Multiple)</h3>
-            {purchaseForm.watch('cylinders').map((cylinder, idx) => {
-              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
-              return (
-                <div key={idx} className="flex gap-2 mb-2">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search cylinder..."
-                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
-                        onChange={(e) => {
-                          setCylinderSearch(e.target.value)
-                          if (!e.target.value) purchaseForm.setValue(`cylinders.${idx}.cylinderId`, '')
-                        }}
-                        className="input-field pl-10 w-full"
-                      />
-                      {!selectedCylinder && (cylinderSearch || purchaseForm.watch(`cylinders.${idx}.cylinderId`)) && filteredCylindersForSearch.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                          {filteredCylindersForSearch.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                                setCylinderSearch('')
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                            >
-                              {c.cylinderCode} — {c.gasTypeName}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+            <h3 className="font-semibold text-sm mb-2">Cylinder</h3>
+            {selectedPurchaseCylinder ? (
+              <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-900/20">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      {selectedPurchaseCylinder.cylinderCode} — {selectedPurchaseCylinder.gasTypeName || 'Unknown Gas'}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      Capacity: {selectedPurchaseCylinder.capacity || '—'} | Status: {selectedPurchaseCylinder.status || '—'}
+                    </p>
                   </div>
-                  {purchaseForm.watch('cylinders').length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const cyl = purchaseForm.watch('cylinders')
-                        purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                      }}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      purchaseForm.setValue('cylinders', [{ cylinderId: '' }])
+                      setCylinderSearch('')
+                    }}
+                    className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                  >
+                    Change
+                  </button>
                 </div>
-              )
-            })}
-            <button
-              type="button"
-              onClick={() => {
-                const cyl = purchaseForm.watch('cylinders')
-                purchaseForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
-              }}
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
-            >
-              + Add Cylinder
-            </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search and select one cylinder..."
+                  value={cylinderSearch}
+                  onChange={(e) => {
+                    setCylinderSearch(e.target.value)
+                    if (!e.target.value) purchaseForm.setValue('cylinders', [{ cylinderId: '' }])
+                  }}
+                  className="input-field pl-10 w-full"
+                />
+                {cylinderSearch && filteredCylindersForSearch.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                    {filteredCylindersForSearch.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          purchaseForm.setValue('cylinders', [{ cylinderId: c.id }])
+                          setCylinderSearch('')
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                      >
+                        {c.cylinderCode} — {c.gasTypeName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Payment */}

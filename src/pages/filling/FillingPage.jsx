@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { Plus, Play, Square, Wind, Search, Trash2 } from 'lucide-react'
+import { Plus, Play, Square, Wind, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { addDocument, updateDocument } from '../../services/firestoreService'
@@ -11,6 +11,14 @@ import { FormField, Input, Textarea } from '../../components/ui/FormField'
 import { useTable } from '../../hooks/useTable'
 import { fmtDateTime, fmtDate, fmtCurrency } from '../../utils/helpers'
 import { useAuth } from '../../context/AuthContext'
+import {
+  LIQUID_OXYGEN_TYPE as OXYGEN_TYPE,
+  formatCubicMeters,
+  getFillingCubicMeters,
+  getLiquidOxygenStockSummary,
+  getPurchaseCubicMeters,
+  parseStockNumber,
+} from '../../utils/liquidOxygenStock'
 
 export const FillingPage = () => {
   const { userProfile } = useAuth()
@@ -21,6 +29,7 @@ export const FillingPage = () => {
   const [saving, setSaving] = useState(false)
   const [cylinderSearch, setCylinderSearch] = useState('')
   const [selectedCylinders, setSelectedCylinders] = useState([])
+  const [lessCubic, setLessCubic] = useState('')
 
   // Purchase modal state
   const [purchaseModal, setPurchaseModal] = useState(false)
@@ -32,7 +41,8 @@ export const FillingPage = () => {
       supplierName: '',
       date: new Date().toISOString().split('T')[0],
       dcNumber: '',
-      cylinders: [{ cylinderId: '' }],
+      oxygenType: OXYGEN_TYPE,
+      cubicMeters: '',
       currentAmount: '',
       paidAmount: '',
       gst: 0,
@@ -43,6 +53,7 @@ export const FillingPage = () => {
   const currentAmount = purchaseForm.watch('currentAmount')
   const paidAmount = purchaseForm.watch('paidAmount')
   const gstPercent = purchaseForm.watch('gst') || 0
+  const purchaseCubicMeters = purchaseForm.watch('cubicMeters')
 
   useEffect(() => {
     const amount = parseFloat(currentAmount) || 0
@@ -52,13 +63,24 @@ export const FillingPage = () => {
     setBalance((totalAmount - paid).toFixed(2))
   }, [currentAmount, paidAmount, gstPercent])
   // Filter purchases for filling only (no longer needed since we have separate collection)
-  const { rows: purchaseRows } = useTable(fillingPurchases, ['supplierName', 'dcNumber'], 10)
+  const { rows: purchaseRows } = useTable(fillingPurchases, ['supplierName', 'dcNumber', 'oxygenType'], 10)
+
+  const stockSummary = getLiquidOxygenStockSummary(fillingPurchases, fillings)
+  const {
+    totalCubicMeterStock,
+    availableStock,
+    filledQuantity,
+    remainingQuantity,
+  } = stockSummary
+  const purchaseStockAfter = availableStock + parseStockNumber(purchaseCubicMeters)
 
   // Purchase columns
   const purchaseColumns = [
     { key: 'supplierName', label: 'Supplier', sortable: true },
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
+    { key: 'oxygenType', label: 'Oxygen Type', render: (row) => row.oxygenType || OXYGEN_TYPE },
+    { key: 'cubicMeters', label: 'Cubic Meters', render: (row) => formatCubicMeters(getPurchaseCubicMeters(row)) },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
     { key: 'gst', label: 'GST %' },
     { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount) },
@@ -74,7 +96,8 @@ export const FillingPage = () => {
       supplierName: '',
       date: new Date().toISOString().split('T')[0],
       dcNumber: '',
-      cylinders: [{ cylinderId: '' }],
+      oxygenType: OXYGEN_TYPE,
+      cubicMeters: '',
       currentAmount: '',
       paidAmount: '',
       gst: 0,
@@ -85,21 +108,12 @@ export const FillingPage = () => {
   const onPurchaseSubmit = async (data) => {
     setPurchaseSaving(true)
     try {
-      const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
-      if (validCylinders.length === 0) {
-        toast.error('Please select at least one cylinder')
+      const cubicMeters = parseStockNumber(data.cubicMeters)
+      if (cubicMeters <= 0) {
+        toast.error('Please enter cubic meters for Liquid Oxygen')
         setPurchaseSaving(false)
         return
       }
-      const cylindersList = validCylinders.map(c => {
-        const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
-        return {
-          cylinderId: cylinder?.id,
-          cylinderCode: cylinder?.cylinderCode || '',
-          gasType: cylinder?.gasTypeName || '',
-          capacity: cylinder?.capacity,
-        }
-      })
       const currentAmount = parseFloat(data.currentAmount) || 0
       const paidAmount = parseFloat(data.paidAmount) || 0
       const gst = data.gst || 0
@@ -110,7 +124,8 @@ export const FillingPage = () => {
         supplierName: data.supplierName,
         date: data.date || new Date().toISOString().split('T')[0],
         dcNumber: data.dcNumber,
-        cylinders: cylindersList,
+        oxygenType: data.oxygenType || OXYGEN_TYPE,
+        cubicMeters,
         currentAmount,
         paidAmount,
         balanceAmount,
@@ -131,10 +146,10 @@ export const FillingPage = () => {
     }
   }
 
-  const { handleSubmit, reset, formState: { errors } } = useForm()
+  const { reset } = useForm()
 
   const { rows, search, setSearch, sortKey, sortDir, handleSort, page, setPage, totalPages, totalRows } = useTable(
-    fillings, ['cylinderCode', 'gasTypeName', 'status'], 10
+    fillings, ['oxygenType', 'cylinderCode', 'gasTypeName', 'status'], 10
   )
 
   // Filter to only Oxygen gas type
@@ -143,6 +158,13 @@ export const FillingPage = () => {
   const filteredCylinders = cylinderSearch 
     ? emptyCylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase()))
     : emptyCylinders
+  const selectedFillingCubicMeters = selectedCylinders.reduce((sum, cylinderId) => {
+    const cylinder = cylinders.find((c) => c.id === cylinderId)
+    return sum + parseStockNumber(cylinder?.capacity)
+  }, 0)
+  const manualLessCubic = parseStockNumber(lessCubic)
+  const totalFillingDeduction = selectedFillingCubicMeters + manualLessCubic
+  const remainingAfterSelectedFilling = availableStock - totalFillingDeduction
 
   const getCapacityUnit = (gasName) => {
     const cubicGases = ['Oxygen', 'Argon', 'Nitrogen']
@@ -154,30 +176,58 @@ export const FillingPage = () => {
       toast.error('Please select at least one cylinder')
       return
     }
+    if (selectedFillingCubicMeters <= 0) {
+      toast.error('Selected cylinders must have cubic meter capacity')
+      return
+    }
+    if (manualLessCubic < 0) {
+      toast.error('Less Cubic cannot be negative')
+      return
+    }
+    if (totalFillingDeduction > availableStock) {
+      toast.error(`Insufficient Liquid Oxygen stock. Available: ${formatCubicMeters(availableStock)}`)
+      return
+    }
 
     setSaving(true)
     try {
-      for (const cylinderId of selectedCylinders) {
-        const cylinder = cylinders.find((c) => c.id === cylinderId)
+      let runningStock = availableStock
+      const selectedCylinderDetails = selectedCylinders
+        .map((cylinderId) => cylinders.find((c) => c.id === cylinderId))
+        .filter(Boolean)
+
+      for (const [index, cylinder] of selectedCylinderDetails.entries()) {
         const capacityUnit = getCapacityUnit(cylinder?.gasTypeName)
+        const cubicMetersUsed = parseStockNumber(cylinder?.capacity)
+        const lessCubicForRecord = index === 0 ? manualLessCubic : 0
+        const totalCubicMetersUsed = cubicMetersUsed + lessCubicForRecord
+        const stockBefore = runningStock
+        runningStock = Math.max(runningStock - totalCubicMetersUsed, 0)
         await addDocument('fillings', {
-          cylinderId: cylinderId,
+          cylinderId: cylinder.id,
           cylinderCode: cylinder?.cylinderCode,
-          gasTypeName: cylinder?.gasTypeName,
+          gasTypeName: OXYGEN_TYPE,
+          oxygenType: OXYGEN_TYPE,
           capacity: cylinder?.capacity,
           capacityUnit,
+          cubicMetersUsed,
+          lessCubic: lessCubicForRecord,
+          totalCubicMetersUsed,
+          stockBefore,
+          stockAfter: runningStock,
           startedAt: new Date().toISOString(),
           endedAt: null,
           duration: null,
           status: 'in_progress',
           startedBy: userProfile?.name,
         })
-        await updateDocument('cylinders', cylinderId, { status: 'in_use' })
+        await updateDocument('cylinders', cylinder.id, { status: 'in_use' })
       }
-      toast.success(`Filling started for ${selectedCylinders.length} cylinder(s)`)
+      toast.success(`Filling started. Stock reduced by ${formatCubicMeters(totalFillingDeduction)}`)
       setModalOpen(false)
       setCylinderSearch('')
       setSelectedCylinders([])
+      setLessCubic('')
       reset()
     } catch {
       toast.error('Failed to start filling')
@@ -202,6 +252,13 @@ export const FillingPage = () => {
     }
   }
 
+  const resetStartModal = () => {
+    setModalOpen(false)
+    setCylinderSearch('')
+    setSelectedCylinders([])
+    setLessCubic('')
+  }
+
   const handleEnd = async (filling) => {
     try {
       const endedAt = new Date().toISOString()
@@ -222,8 +279,11 @@ export const FillingPage = () => {
 
   const columns = [
     { key: 'cylinderCode', label: 'Cylinder Code', sortable: true },
-    { key: 'gasTypeName', label: 'Gas Type', sortable: true },
-    { key: 'capacity', label: 'Capacity', render: (row) => `${row.capacity} ${row.capacityUnit || getCapacityUnit(row.gasTypeName)}` },
+    { key: 'oxygenType', label: 'Oxygen Type', render: (row) => row.oxygenType || row.gasTypeName || OXYGEN_TYPE },
+    { key: 'cubicMetersUsed', label: 'Cylinder Cubic Meters', render: (row) => formatCubicMeters(row.cubicMetersUsed ?? row.capacity) },
+    { key: 'lessCubic', label: 'Less Cubic', render: (row) => formatCubicMeters(row.lessCubic) },
+    { key: 'totalCubicMetersUsed', label: 'Total Deduction', render: (row) => formatCubicMeters(getFillingCubicMeters(row)) },
+    { key: 'stockAfter', label: 'Stock After', render: (row) => row.stockAfter !== undefined ? formatCubicMeters(row.stockAfter) : '—' },
     { key: 'startedAt', label: 'Started', render: (row) => fmtDateTime(row.startedAt) },
     { key: 'endedAt', label: 'Ended', render: (row) => row.endedAt ? fmtDateTime(row.endedAt) : '—' },
     { key: 'duration', label: 'Duration', render: (row) => row.duration ? `${row.duration} min` : '—' },
@@ -265,8 +325,8 @@ export const FillingPage = () => {
         />
       </div>
       {/* Purchase Modal for Filling */}
-      <Modal isOpen={purchaseModal} onClose={resetPurchaseModal} title="Purchase for Filling">
-        <form onSubmit={purchaseForm.handleSubmit(onPurchaseSubmit)} className="space-y-4 max-h-96 overflow-y-auto">
+      <Modal isOpen={purchaseModal} onClose={resetPurchaseModal} title="Purchase for Filling" size="xl">
+        <form onSubmit={purchaseForm.handleSubmit(onPurchaseSubmit)} className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
           {/* Supplier Search */}
           <FormField label="Supplier Name" error={purchaseForm.formState?.errors?.supplierName?.message} required>
             <Input
@@ -283,73 +343,44 @@ export const FillingPage = () => {
               <Input {...purchaseForm.register('dcNumber')} placeholder="DC Number" />
             </FormField>
           </div>
-          {/* Cylinders */}
-          <div>
-            <h3 className="font-semibold text-sm mb-2">Cylinders (Multiple)</h3>
-            {purchaseForm.watch('cylinders').map((cylinder, idx) => {
-              const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
-              return (
-                <div key={idx} className="flex gap-2 mb-2">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search cylinder..."
-                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
-                        onChange={(e) => {
-                          setCylinderSearch(e.target.value)
-                          if (!e.target.value) purchaseForm.setValue(`cylinders.${idx}.cylinderId`, '')
-                        }}
-                        className="input-field pl-10 w-full"
-                      />
-                      {!selectedCylinder && (cylinderSearch || purchaseForm.watch(`cylinders.${idx}.cylinderId`)) && cylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).length > 0 && (
-                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                          {cylinders.filter(c => c.cylinderCode.toLowerCase().includes(cylinderSearch.toLowerCase())).map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                                setCylinderSearch('')
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                            >
-                              {c.cylinderCode} — {c.gasTypeName}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {purchaseForm.watch('cylinders').length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const cyl = purchaseForm.watch('cylinders')
-                        purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                      }}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-            <button
-              type="button"
-              onClick={() => {
-                const cyl = purchaseForm.watch('cylinders')
-                purchaseForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
-              }}
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
-            >
-              + Add Cylinder
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Oxygen Type" error={purchaseForm.formState?.errors?.oxygenType?.message} required>
+              <Input
+                {...purchaseForm.register('oxygenType')}
+                readOnly
+                className="bg-gray-100 dark:bg-gray-700"
+              />
+            </FormField>
+            <FormField label="Cubic Meters" error={purchaseForm.formState?.errors?.cubicMeters?.message} required>
+              <Input
+                {...purchaseForm.register('cubicMeters', {
+                  required: 'Cubic meters is required',
+                  min: { value: 0.01, message: 'Cubic meters must be positive' },
+                })}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 5000"
+              />
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm dark:border-green-700 dark:bg-green-900/20">
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Current Stock</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(availableStock)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Purchase Quantity</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(purchaseCubicMeters)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Stock After Purchase</p>
+              <p className="font-semibold text-green-700 dark:text-green-300">{formatCubicMeters(purchaseStockAfter)}</p>
+            </div>
           </div>
           {/* Payment */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <FormField label="Amount (₹)" error={purchaseForm.formState?.errors?.currentAmount?.message} required>
               <Input
                 {...purchaseForm.register('currentAmount')}
@@ -421,67 +452,63 @@ export const FillingPage = () => {
         </form>
       </Modal>
 
-      {/* Three Section Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* PURCHASE Section */}
+      {/* Cubic Meter Stock Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="card border-l-4 border-blue-500">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">PURCHASE</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">For Liquid oxygen in cubic meter</p>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">TOTAL CUBIC METER STOCK</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Liquid Oxygen purchased</p>
             </div>
             <Plus className="h-5 w-5 text-blue-500" />
           </div>
           <div className="mt-3">
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fillingPurchases.length}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Purchase orders</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatCubicMeters(totalCubicMeterStock)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{fillingPurchases.length} purchase orders</p>
           </div>
         </div>
 
-        {/* FILLING Section */}
-        <div className="card border-l-4 border-yellow-500">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">FILLING</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Select cylinder in number – calculate capacity automatically</p>
-            </div>
-            <Play className="h-5 w-5 text-yellow-500" />
-          </div>
-          <div className="mt-3">
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{fillings.filter(f => f.status === 'in_progress').length}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">In progress</p>
-          </div>
-        </div>
-
-        {/* STOCK Section */}
         <div className="card border-l-4 border-green-500">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">STOCK</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">(Old stock + Purchase) - Filling</p>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">AVAILABLE STOCK</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ready for filling</p>
             </div>
             <Wind className="h-5 w-5 text-green-500" />
           </div>
           <div className="mt-3">
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{emptyCylinders.length}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Available cylinders</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatCubicMeters(availableStock)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Live stock balance</p>
           </div>
         </div>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Sessions', value: fillings.length, color: 'text-blue-600' },
-          { label: 'In Progress', value: fillings.filter((f) => f.status === 'in_progress').length, color: 'text-yellow-600' },
-          { label: 'Completed', value: fillings.filter((f) => f.status === 'completed').length, color: 'text-green-600' },
-          { label: 'Available Cylinders', value: emptyCylinders.length, color: 'text-purple-600' },
-        ].map((s) => (
-          <div key={s.label} className="card text-center py-4">
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{s.label}</p>
+        <div className="card border-l-4 border-yellow-500">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">FILLED QUANTITY</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Cubic meters used for filling</p>
+            </div>
+            <Play className="h-5 w-5 text-yellow-500" />
           </div>
-        ))}
+          <div className="mt-3">
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatCubicMeters(filledQuantity)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{fillings.length} filling sessions</p>
+          </div>
+        </div>
+
+        <div className="card border-l-4 border-purple-500">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300">REMAINING QUANTITY</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Stock after filled quantity</p>
+            </div>
+            <Wind className="h-5 w-5 text-purple-500" />
+          </div>
+          <div className="mt-3">
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatCubicMeters(remainingQuantity)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Calculated dynamically</p>
+          </div>
+        </div>
       </div>
 
       <div className="card">
@@ -506,8 +533,29 @@ export const FillingPage = () => {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => { setModalOpen(false); setCylinderSearch(''); setSelectedCylinders([]); }} title="Start Filling Session">
+      <Modal isOpen={modalOpen} onClose={resetStartModal} title="Start Liquid Oxygen Filling" size="lg">
         <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-700 dark:bg-blue-900/20">
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Available Stock</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(availableStock)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Cylinder Usage</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(selectedFillingCubicMeters)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Less Cubic</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(manualLessCubic)}</p>
+            </div>
+            <div>
+              <p className="text-gray-600 dark:text-gray-400">Remaining After Filling</p>
+              <p className={`font-semibold ${remainingAfterSelectedFilling < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                {formatCubicMeters(remainingAfterSelectedFilling)}
+              </p>
+            </div>
+          </div>
+
           <FormField label="Search Cylinder by Number">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -521,7 +569,21 @@ export const FillingPage = () => {
             </div>
           </FormField>
 
-          <FormField label="Select Cylinders (Empty)" required>
+          <FormField label="Less Cubic">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={lessCubic}
+              onChange={(e) => setLessCubic(e.target.value)}
+              placeholder="Manual cubic meter deduction"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Optional manual adjustment. This amount is deducted from Liquid Oxygen stock with the selected cylinders.
+            </p>
+          </FormField>
+
+          <FormField label="Select Empty Oxygen Cylinders" required>
             {filteredCylinders.length > 0 && (
               <div className="mb-3">
                 <button
@@ -545,7 +607,7 @@ export const FillingPage = () => {
                       className="h-4 w-4 rounded border-gray-300 text-primary-600 cursor-pointer"
                     />
                     <span className="text-sm text-gray-900 dark:text-gray-100 flex-1">
-                      {c.cylinderCode} — {c.gasTypeName} ({c.capacity} {getCapacityUnit(c.gasTypeName)})
+                      {c.cylinderCode} — {c.gasTypeName} ({formatCubicMeters(c.capacity)})
                     </span>
                   </label>
                 ))
@@ -558,11 +620,20 @@ export const FillingPage = () => {
           </FormField>
 
           {selectedCylinders.length > 0 && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                <span className="font-semibold">{selectedCylinders.length}</span> cylinder(s) selected for filling
+            <div className={`${remainingAfterSelectedFilling < 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20'} p-3 rounded-lg`}>
+              <p className={`text-sm ${remainingAfterSelectedFilling < 0 ? 'text-red-700 dark:text-red-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                <span className="font-semibold">{selectedCylinders.length}</span> cylinder(s) selected,
+                {' '}using <span className="font-semibold">{formatCubicMeters(selectedFillingCubicMeters)}</span>.
+                {' '}Less Cubic: <span className="font-semibold">{formatCubicMeters(manualLessCubic)}</span>.
+                {' '}Remaining stock: <span className="font-semibold">{formatCubicMeters(remainingAfterSelectedFilling)}</span>.
               </p>
             </div>
+          )}
+
+          {availableStock <= 0 && (
+            <p className="text-red-600 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
+              No Liquid Oxygen stock is available. Add a cubic meter purchase before starting filling.
+            </p>
           )}
 
           {emptyCylinders.length === 0 && !cylinderSearch && (
@@ -572,9 +643,14 @@ export const FillingPage = () => {
           )}
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => { setModalOpen(false); setCylinderSearch(''); setSelectedCylinders([]); }} className="btn-secondary">Cancel</button>
-            <button type="button" onClick={onStart} disabled={saving || selectedCylinders.length === 0} className="btn-primary">
-              {saving ? 'Starting...' : `Start Filling (${selectedCylinders.length})`}
+            <button type="button" onClick={resetStartModal} className="btn-secondary">Cancel</button>
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={saving || selectedCylinders.length === 0 || selectedFillingCubicMeters <= 0 || manualLessCubic < 0 || remainingAfterSelectedFilling < 0}
+              className="btn-primary"
+            >
+              {saving ? 'Starting...' : 'Start Filling'}
             </button>
           </div>
         </div>

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Package, Users, TrendingDown, Truck, Wind, UserCheck } from 'lucide-react'
+import { CheckCircle, Package, Users, TrendingDown, Truck, Wind, UserCheck } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend } from 'recharts'
 import { StatCard } from '../../components/ui/StatCard'
 import { getCollection } from '../../services/firestoreService'
 import { Loader } from '../../components/ui/Loader'
 import { fmtCurrency } from '../../utils/helpers'
+import { formatCubicMeters, getLiquidOxygenStockSummary } from '../../utils/liquidOxygenStock'
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 
@@ -18,21 +19,36 @@ const monthlyData = [
 ]
 
 export const DashboardPage = () => {
-  const [stats, setStats] = useState({ cylinders: 0, customers: 0, suppliers: 0, vehicles: 0, expenses: 0, filling: 0 })
+  const [stats, setStats] = useState({
+    cylinders: 0,
+    customers: 0,
+    suppliers: 0,
+    vehicles: 0,
+    expenses: 0,
+    filling: 0,
+    stock: {
+      totalCubicMeterStock: 0,
+      availableStock: 0,
+      filledQuantity: 0,
+      remainingQuantity: 0,
+    },
+  })
   const [cylinderStatus, setCylinderStatus] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [cylinders, customers, suppliers, vehicles, expenses, fillings] = await Promise.all([
+        const [cylinders, customers, suppliers, vehicles, expenses, fillings, fillingPurchases] = await Promise.all([
           getCollection('cylinders'),
           getCollection('customers'),
           getCollection('suppliers'),
           getCollection('vehicles'),
           getCollection('expenses'),
           getCollection('fillings'),
+          getCollection('fillingPurchases'),
         ])
+        const stock = getLiquidOxygenStockSummary(fillingPurchases, fillings)
 
         setStats({
           cylinders: cylinders.length,
@@ -41,6 +57,7 @@ export const DashboardPage = () => {
           vehicles: vehicles.length,
           expenses: expenses.reduce((s, e) => s + (e.amount || 0), 0),
           filling: fillings.length,
+          stock,
         })
 
         const statusMap = {}
@@ -72,11 +89,13 @@ export const DashboardPage = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        <StatCard title="Total Cylinders" value={stats.cylinders} icon={Package} color="blue" />
+        <StatCard title="Total Cubic Meter Stock" value={formatCubicMeters(stats.stock.totalCubicMeterStock)} icon={Package} color="blue" />
+        <StatCard title="Available Stock" value={formatCubicMeters(stats.stock.availableStock)} icon={CheckCircle} color="green" />
+        <StatCard title="Filled Quantity" value={formatCubicMeters(stats.stock.filledQuantity)} icon={Wind} color="indigo" />
+        <StatCard title="Remaining Quantity" value={formatCubicMeters(stats.stock.remainingQuantity)} icon={Package} color="purple" />
         <StatCard title="Total Customers" value={stats.customers} icon={UserCheck} color="green" />
         <StatCard title="Total Suppliers" value={stats.suppliers} icon={Users} color="purple" />
         <StatCard title="Vehicles" value={stats.vehicles} icon={Truck} color="yellow" />
-        <StatCard title="Filling Sessions" value={stats.filling} icon={Wind} color="indigo" />
         <StatCard title="Total Expenses" value={fmtCurrency(stats.expenses)} icon={TrendingDown} color="red" />
       </div>
 
