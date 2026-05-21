@@ -194,6 +194,11 @@ export const FillingPage = () => {
       if (purchaseEditItem) {
         const previousCubicMeters = getPurchaseCubicMeters(purchaseEditItem)
         const delta = cubicMeters - previousCubicMeters
+        if (delta < 0 && Math.abs(delta) > availableStock) {
+          toast.error('Cannot reduce purchase below already consumed stock')
+          setPurchaseSaving(false)
+          return
+        }
         await updateDocument('fillingPurchases', purchaseEditItem.id, purchaseData)
         await writeAuditLog({
           action: 'edit',
@@ -535,14 +540,27 @@ export const FillingPage = () => {
     { key: 'startedAt', label: 'Started', render: (row) => fmtDateTime(row.startedAt) },
     { key: 'endedAt', label: 'Ended', render: (row) => row.endedAt ? fmtDateTime(row.endedAt) : '—' },
     { key: 'duration', label: 'Duration', render: (row) => row.duration ? `${row.duration} min` : '—' },
-    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'in_progress' ? 'pending' : 'approved'} label={row.status === 'in_progress' ? 'In Progress' : 'Completed'} /> },
+    { key: 'status', label: 'Status', render: (row) => (
+      <Badge
+        status={row.status === 'voided' ? 'rejected' : row.status === 'in_progress' ? 'pending' : 'approved'}
+        label={row.status === 'voided' ? 'Voided' : row.status === 'in_progress' ? 'In Progress' : 'Completed'}
+      />
+    ) },
     { key: 'startedBy', label: 'By' },
     { key: 'actions', label: 'Actions', render: (row) => (
-      row.status === 'in_progress' ? (
-        <button onClick={() => handleEnd(row)} className="flex items-center gap-1 btn-danger text-xs px-2 py-1">
-          <Square className="h-3.5 w-3.5" /> End Filling
+      <div className="flex items-center gap-2">
+        {row.status === 'in_progress' && (
+          <button onClick={() => handleEnd(row)} className="flex items-center gap-1 btn-danger text-xs px-2 py-1">
+            <Square className="h-3.5 w-3.5" /> End
+          </button>
+        )}
+        <button onClick={() => openFillingEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
         </button>
-      ) : <span className="text-gray-400 text-xs">—</span>
+        <button onClick={() => setFillingVoidItem(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     )},
   ]
 
@@ -903,6 +921,57 @@ export const FillingPage = () => {
           </div>
         </div>
       </Modal>
+
+      <Modal isOpen={!!fillingEditItem} onClose={() => { setFillingEditItem(null); setEditLessCubic('') }} title="Edit Filling Adjustment">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-sm">
+            <p className="font-semibold text-gray-900 dark:text-gray-100">{fillingEditItem?.cylinderCode || 'Filling Session'}</p>
+            <p className="mt-1 text-gray-600 dark:text-gray-400">
+              Cylinder usage: {formatCubicMeters(fillingEditItem?.cubicMetersUsed ?? fillingEditItem?.capacity)}
+            </p>
+          </div>
+          <FormField label="Less Cubic">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editLessCubic}
+              onChange={(e) => setEditLessCubic(e.target.value)}
+              placeholder="Manual cubic meter deduction"
+            />
+          </FormField>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-700 dark:bg-blue-900/20">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Total Deduction</span>
+              <span className="font-semibold text-blue-700 dark:text-blue-300">
+                {formatCubicMeters(parseStockNumber(fillingEditItem?.cubicMetersUsed ?? fillingEditItem?.capacity) + parseStockNumber(editLessCubic))}
+              </span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button type="button" onClick={() => { setFillingEditItem(null); setEditLessCubic('') }} className="btn-secondary">Cancel</button>
+            <button type="button" onClick={saveFillingEdit} disabled={editSaving} className="btn-primary">{editSaving ? 'Saving...' : 'Save Changes'}</button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!purchaseVoidItem}
+        onClose={() => setPurchaseVoidItem(null)}
+        onConfirm={() => { voidPurchase(); setPurchaseVoidItem(null) }}
+        title="Void Filling Purchase"
+        message="This will void the purchase and reduce available cubic meter stock if it has not already been consumed."
+        confirmText="Void Purchase"
+      />
+
+      <ConfirmDialog
+        isOpen={!!fillingVoidItem}
+        onClose={() => setFillingVoidItem(null)}
+        onConfirm={() => { voidFilling(); setFillingVoidItem(null) }}
+        title="Void Filling Session"
+        message="This will void the filling session, reverse cubic meter stock, and reset the linked cylinder when possible."
+        confirmText="Void Filling"
+      />
     </div>
   )
 }

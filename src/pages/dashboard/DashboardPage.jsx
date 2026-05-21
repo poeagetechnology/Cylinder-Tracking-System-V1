@@ -39,7 +39,7 @@ export const DashboardPage = () => {
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [cylinders, customers, suppliers, vehicles, expenses, fillings, fillingPurchases] = await Promise.all([
+        const [cylinders, customers, suppliers, vehicles, expenses, fillings, fillingPurchases, stockTransactions] = await Promise.all([
           getCollection('cylinders'),
           getCollection('customers'),
           getCollection('suppliers'),
@@ -47,8 +47,9 @@ export const DashboardPage = () => {
           getCollection('expenses'),
           getCollection('fillings'),
           getCollection('fillingPurchases'),
+          getCollection('stockTransactions'),
         ])
-        const stock = getLiquidOxygenStockSummary(fillingPurchases, fillings)
+        const stock = getLiquidOxygenStockSummary(fillingPurchases, fillings, stockTransactions)
 
         setStats({
           cylinders: cylinders.length,

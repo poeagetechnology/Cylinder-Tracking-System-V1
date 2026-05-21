@@ -55,6 +55,7 @@ export const statusClass = (status) => {
     full: 'badge-blue',
     empty: 'badge-red',
     in_use: 'badge-yellow',
+    voided: 'badge-red',
   }
   return map[status] || 'badge-gray'
 }

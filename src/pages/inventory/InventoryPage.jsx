@@ -3,18 +3,21 @@ import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { useAuth } from '../../context/AuthContext'
-import { addDocument } from '../../services/firestoreService'
-import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, TrendingUp, TrendingDown, Trash2, Search, Wind } from 'lucide-react'
+import { addDocument, updateDocument } from '../../services/firestoreService'
+import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, TrendingUp, TrendingDown, Trash2, Search, Wind, Edit2 } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { Badge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
 import { Modal } from '../../components/ui/Modal'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { FormField, Input, Select, Textarea } from '../../components/ui/FormField'
 import { useTable } from '../../hooks/useTable'
 import * as Yup from 'yup'
 import toast from 'react-hot-toast'
 import { fmtDate, fmtCurrency } from '../../utils/helpers'
 import { formatCubicMeters, getLiquidOxygenStockSummary } from '../../utils/liquidOxygenStock'
+import { writeAuditLog } from '../../utils/audit'
+import { getVoidPayload, hasDuplicateCylinderIds, hasDuplicateValue, normalizeText } from '../../utils/records'
 
 const ALERT_THRESHOLD = 5
 
@@ -80,6 +83,7 @@ export const InventoryPage = () => {
   const { data: purchases } = useFirestoreCollection('purchases')
   const { data: fillingPurchases } = useFirestoreCollection('fillingPurchases')
   const { data: fillings } = useFirestoreCollection('fillings')
+  const { data: stockTransactions } = useFirestoreCollection('stockTransactions')
   const { data: sales } = useFirestoreCollection('sales')
   const { data: emptyReturns } = useFirestoreCollection('emptyReturns')
   const { data: loadReturns } = useFirestoreCollection('loadReturns')
@@ -102,6 +106,11 @@ export const InventoryPage = () => {
   const [selectedSaleCustomer, setSelectedSaleCustomer] = useState(null)
   const [saleCustomerRateDisplay, setSaleCustomerRateDisplay] = useState(null)
   const [saleCustomerAllRates, setSaleCustomerAllRates] = useState(null)
+  const [purchaseEditItem, setPurchaseEditItem] = useState(null)
+  const [saleEditItem, setSaleEditItem] = useState(null)
+  const [emptyReturnEditItem, setEmptyReturnEditItem] = useState(null)
+  const [loadReturnEditItem, setLoadReturnEditItem] = useState(null)
+  const [voidTarget, setVoidTarget] = useState(null)
 
   const purchaseForm = useForm({
     resolver: yupResolver(purchaseSchema),
@@ -317,21 +326,25 @@ export const InventoryPage = () => {
     record.cylinders && record.cylinders.length > 0
       ? record.cylinders.map(cyl => ({
           id: `${record.id}-${cyl.cylinderId}`,
+          sourceId: record.id,
           cylinderCode: cyl.cylinderCode || '',
           gasType: cyl.gasType || '',
           customerName: record.customerName,
           dcNumber: record.dcNumber,
           notes: record.notes,
+          status: record.status,
           recordedBy: record.recordedBy,
           createdAt: record.createdAt,
         }))
       : [{
           id: record.id,
+          sourceId: record.id,
           cylinderCode: '',
           gasType: '',
           customerName: record.customerName,
           dcNumber: record.dcNumber,
           notes: record.notes,
+          status: record.status,
           recordedBy: record.recordedBy,
           createdAt: record.createdAt,
         }]
@@ -342,23 +355,27 @@ export const InventoryPage = () => {
     record.cylinders && record.cylinders.length > 0
       ? record.cylinders.map(cyl => ({
           id: `${record.id}-${cyl.cylinderId}`,
+          sourceId: record.id,
           cylinderCode: cyl.cylinderCode || '',
           gasType: cyl.gasType || '',
           customerName: record.customerName,
           dcNumber: record.dcNumber,
           faultDescription: record.faultDescription,
           notes: record.notes,
+          status: record.status,
           recordedBy: record.recordedBy,
           createdAt: record.createdAt,
         }))
       : [{
           id: record.id,
+          sourceId: record.id,
           cylinderCode: '',
           gasType: '',
           customerName: record.customerName,
           dcNumber: record.dcNumber,
           faultDescription: record.faultDescription,
           notes: record.notes,
+          status: record.status,
           recordedBy: record.recordedBy,
           createdAt: record.createdAt,
         }]
@@ -368,9 +385,89 @@ export const InventoryPage = () => {
   const { rows: loadReturnRows } = useTable(flattenedLoadReturns, ['cylinderCode'], 10)
 
   const lowStockItems = inventoryByGas.filter((i) => i.alert && i.total > 0)
-  const liquidOxygenStock = getLiquidOxygenStockSummary(fillingPurchases, fillings)
+  const liquidOxygenStock = getLiquidOxygenStockSummary(fillingPurchases, fillings, stockTransactions)
   const selectedPurchaseCylinderId = purchaseForm.watch('cylinders')?.[0]?.cylinderId || ''
   const selectedPurchaseCylinder = cylinders.find((c) => c.id === selectedPurchaseCylinderId)
+
+  const openPurchaseEdit = (record) => {
+    setPurchaseEditItem(record)
+    setSupplierSearch('')
+    purchaseForm.reset({
+      supplierName: record.supplierName || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      dcNumber: record.dcNumber || '',
+      cylinders: record.cylinders?.length ? record.cylinders.map((c) => ({ cylinderId: c.cylinderId })) : [{ cylinderId: '' }],
+      currentAmount: record.currentAmount || '',
+      paidAmount: record.paidAmount || '',
+      gst: record.gst || 0,
+      notes: record.notes || '',
+    })
+    setPurchaseModal(true)
+  }
+
+  const openSaleEdit = (record) => {
+    setSaleEditItem(record)
+    setCustomerSearch('')
+    saleForm.reset({
+      customerName: record.customerName || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      dcNumber: record.dcNumber || '',
+      cylinders: record.cylinders?.length ? record.cylinders.map((c) => ({ cylinderId: c.cylinderId })) : [{ cylinderId: '' }],
+      currentAmount: record.currentAmount || '',
+      paidAmount: record.paidAmount || '',
+      gst: record.gst || 0,
+      notes: record.notes || '',
+    })
+    setSaleModal(true)
+  }
+
+  const openEmptyReturnEdit = (row) => {
+    const record = emptyReturns.find((item) => item.id === row.sourceId)
+    if (!record) return
+    setEmptyReturnEditItem(record)
+    emptyReturnForm.reset({
+      customerName: record.customerName || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      dcNumber: record.dcNumber || '',
+      cylinders: record.cylinders?.length ? record.cylinders.map((c) => ({ cylinderId: c.cylinderId })) : [{ cylinderId: '' }],
+      notes: record.notes || '',
+    })
+    setEmptyReturnModal(true)
+  }
+
+  const openLoadReturnEdit = (row) => {
+    const record = loadReturns.find((item) => item.id === row.sourceId)
+    if (!record) return
+    setLoadReturnEditItem(record)
+    loadReturnForm.reset({
+      customerName: record.customerName || '',
+      date: record.date || new Date().toISOString().split('T')[0],
+      dcNumber: record.dcNumber || '',
+      cylinders: record.cylinders?.length ? record.cylinders.map((c) => ({ cylinderId: c.cylinderId })) : [{ cylinderId: '' }],
+      faultDescription: record.faultDescription || '',
+      notes: record.notes || '',
+    })
+    setLoadReturnModal(true)
+  }
+
+  const voidRecord = async () => {
+    if (!voidTarget) return
+
+    try {
+      await updateDocument(voidTarget.collectionName, voidTarget.id, getVoidPayload(userProfile))
+      await writeAuditLog({
+        action: 'void',
+        collectionName: voidTarget.collectionName,
+        recordId: voidTarget.id,
+        recordLabel: voidTarget.label,
+        before: voidTarget.record,
+        userProfile,
+      })
+      toast.success(`${voidTarget.label || 'Record'} voided`)
+    } catch (err) {
+      toast.error('Failed to void record: ' + err.message)
+    }
+  }
 
   const onPurchaseSubmit = async (data) => {
     setSaving(true)
@@ -379,6 +476,26 @@ export const InventoryPage = () => {
       const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
       if (validCylinders.length === 0) {
         toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateCylinderIds(validCylinders)) {
+        toast.error('Duplicate cylinder selection is not allowed')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateValue(emptyReturns, 'dcNumber', data.dcNumber, emptyReturnEditItem?.id)) {
+        toast.error('Empty return DC Number already exists')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateCylinderIds(validCylinders)) {
+        toast.error('Duplicate cylinder selection is not allowed')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateValue(purchases, 'dcNumber', data.dcNumber, purchaseEditItem?.id)) {
+        toast.error('Purchase DC Number already exists')
         setSaving(false)
         return
       }
@@ -400,10 +517,10 @@ export const InventoryPage = () => {
       const totalAmount = currentAmount + gstAmount
       const balanceAmount = totalAmount - paidAmount
 
-      await addDocument('purchases', {
-        supplierName: data.supplierName,
+      const payload = {
+        supplierName: normalizeText(data.supplierName),
         date: data.date,
-        dcNumber: data.dcNumber,
+        dcNumber: normalizeText(data.dcNumber),
         cylinders: cylindersList,
         currentAmount: currentAmount,
         paidAmount: paidAmount,
@@ -411,9 +528,35 @@ export const InventoryPage = () => {
         gst: data.gst || 0,
         gstAmount: gstAmount,
         totalAmount: currentAmount + gstAmount,
-        notes: data.notes,
+        notes: normalizeText(data.notes),
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
+      }
+
+      if (purchaseEditItem) {
+        await updateDocument('purchases', purchaseEditItem.id, payload)
+        await writeAuditLog({
+          action: 'edit',
+          collectionName: 'purchases',
+          recordId: purchaseEditItem.id,
+          recordLabel: payload.dcNumber,
+          before: purchaseEditItem,
+          after: payload,
+          userProfile,
+        })
+        toast.success('Purchase updated')
+        resetPurchaseModal()
+        return
+      }
+
+      const purchaseId = await addDocument('purchases', payload)
+      await writeAuditLog({
+        action: 'create',
+        collectionName: 'purchases',
+        recordId: purchaseId,
+        recordLabel: payload.dcNumber,
+        after: payload,
+        userProfile,
       })
 
       // Record OUT movement for cylinders
@@ -422,8 +565,8 @@ export const InventoryPage = () => {
           cylinderId: c.cylinderId,
           cylinderCode: c.cylinderCode,
           type: 'OUT',
-          reason: `Purchase - ${data.supplierName}`,
-          reference: data.dcNumber,
+          reason: `Purchase - ${payload.supplierName}`,
+          reference: payload.dcNumber,
           recordedBy: userProfile?.name || 'System',
           createdAt: new Date().toISOString(),
         })
@@ -445,6 +588,16 @@ export const InventoryPage = () => {
       const validCylinders = data.cylinders.filter(c => c.cylinderId && c.cylinderId.trim() !== '')
       if (validCylinders.length === 0) {
         toast.error('Please select at least one cylinder')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateCylinderIds(validCylinders)) {
+        toast.error('Duplicate cylinder selection is not allowed')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateValue(sales, 'dcNumber', data.dcNumber, saleEditItem?.id)) {
+        toast.error('Sale DC Number already exists')
         setSaving(false)
         return
       }
@@ -475,10 +628,10 @@ export const InventoryPage = () => {
       const totalAmount = currentAmount + gstAmount
       const balanceAmount = totalAmount - paidAmount
 
-      await addDocument('sales', {
-        customerName: data.customerName,
+      const payload = {
+        customerName: normalizeText(data.customerName),
         date: data.date,
-        dcNumber: data.dcNumber,
+        dcNumber: normalizeText(data.dcNumber),
         cylinders: cylindersList,
         currentAmount: currentAmount,
         paidAmount: paidAmount,
@@ -486,9 +639,35 @@ export const InventoryPage = () => {
         gst: data.gst || 0,
         gstAmount: gstAmount,
         totalAmount: currentAmount + gstAmount,
-        notes: data.notes,
+        notes: normalizeText(data.notes),
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
+      }
+
+      if (saleEditItem) {
+        await updateDocument('sales', saleEditItem.id, payload)
+        await writeAuditLog({
+          action: 'edit',
+          collectionName: 'sales',
+          recordId: saleEditItem.id,
+          recordLabel: payload.dcNumber,
+          before: saleEditItem,
+          after: payload,
+          userProfile,
+        })
+        toast.success('Sale updated')
+        resetSaleModal()
+        return
+      }
+
+      const saleId = await addDocument('sales', payload)
+      await writeAuditLog({
+        action: 'create',
+        collectionName: 'sales',
+        recordId: saleId,
+        recordLabel: payload.dcNumber,
+        after: payload,
+        userProfile,
       })
 
       // Record OUT movement for cylinders
@@ -497,8 +676,8 @@ export const InventoryPage = () => {
           cylinderId: c.cylinderId,
           cylinderCode: c.cylinderCode,
           type: 'OUT',
-          reason: `Sales - ${data.customerName}`,
-          reference: data.dcNumber,
+          reason: `Sales - ${payload.customerName}`,
+          reference: payload.dcNumber,
           recordedBy: userProfile?.name || 'System',
           createdAt: new Date().toISOString(),
         })
@@ -533,14 +712,40 @@ export const InventoryPage = () => {
         }
       })
 
-      await addDocument('emptyReturns', {
-        customerName: data.customerName,
+      const payload = {
+        customerName: normalizeText(data.customerName),
         date: data.date,
-        dcNumber: data.dcNumber,
+        dcNumber: normalizeText(data.dcNumber),
         cylinders: cylindersList,
-        notes: data.notes,
+        notes: normalizeText(data.notes),
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
+      }
+
+      if (emptyReturnEditItem) {
+        await updateDocument('emptyReturns', emptyReturnEditItem.id, payload)
+        await writeAuditLog({
+          action: 'edit',
+          collectionName: 'emptyReturns',
+          recordId: emptyReturnEditItem.id,
+          recordLabel: payload.dcNumber,
+          before: emptyReturnEditItem,
+          after: payload,
+          userProfile,
+        })
+        toast.success('Empty return updated')
+        resetEmptyReturnModal()
+        return
+      }
+
+      const returnId = await addDocument('emptyReturns', payload)
+      await writeAuditLog({
+        action: 'create',
+        collectionName: 'emptyReturns',
+        recordId: returnId,
+        recordLabel: payload.dcNumber,
+        after: payload,
+        userProfile,
       })
 
       // Record IN movement for each cylinder
@@ -549,8 +754,8 @@ export const InventoryPage = () => {
           cylinderId: c.cylinderId,
           cylinderCode: c.cylinderCode,
           type: 'IN',
-          reason: `Empty Return - ${data.customerName}`,
-          reference: data.dcNumber,
+          reason: `Empty Return - ${payload.customerName}`,
+          reference: payload.dcNumber,
           recordedBy: userProfile?.name || 'System',
           createdAt: new Date().toISOString(),
         })
@@ -575,6 +780,16 @@ export const InventoryPage = () => {
         setSaving(false)
         return
       }
+      if (hasDuplicateCylinderIds(validCylinders)) {
+        toast.error('Duplicate cylinder selection is not allowed')
+        setSaving(false)
+        return
+      }
+      if (hasDuplicateValue(loadReturns, 'dcNumber', data.dcNumber, loadReturnEditItem?.id)) {
+        toast.error('Load return DC Number already exists')
+        setSaving(false)
+        return
+      }
       
       const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
@@ -586,15 +801,41 @@ export const InventoryPage = () => {
         }
       })
 
-      await addDocument('loadReturns', {
-        customerName: data.customerName,
+      const payload = {
+        customerName: normalizeText(data.customerName),
         date: data.date,
-        dcNumber: data.dcNumber,
+        dcNumber: normalizeText(data.dcNumber),
         cylinders: cylindersList,
-        faultDescription: data.faultDescription,
-        notes: data.notes,
+        faultDescription: normalizeText(data.faultDescription),
+        notes: normalizeText(data.notes),
         recordedBy: userProfile?.name || 'System',
         createdAt: new Date().toISOString(),
+      }
+
+      if (loadReturnEditItem) {
+        await updateDocument('loadReturns', loadReturnEditItem.id, payload)
+        await writeAuditLog({
+          action: 'edit',
+          collectionName: 'loadReturns',
+          recordId: loadReturnEditItem.id,
+          recordLabel: payload.dcNumber,
+          before: loadReturnEditItem,
+          after: payload,
+          userProfile,
+        })
+        toast.success('Load return updated')
+        resetLoadReturnModal()
+        return
+      }
+
+      const returnId = await addDocument('loadReturns', payload)
+      await writeAuditLog({
+        action: 'create',
+        collectionName: 'loadReturns',
+        recordId: returnId,
+        recordLabel: payload.dcNumber,
+        after: payload,
+        userProfile,
       })
 
       toast.success('Load return (Fault cylinder) recorded')
@@ -616,6 +857,7 @@ export const InventoryPage = () => {
   // Reset functions
   const resetPurchaseModal = () => {
     setPurchaseModal(false)
+    setPurchaseEditItem(null)
     setPurchaseBalance('0.00')
     setPurchaseGstPreview(0)
     setCylinderSearch('')
@@ -634,6 +876,7 @@ export const InventoryPage = () => {
 
   const resetSaleModal = () => {
     setSaleModal(false)
+    setSaleEditItem(null)
     setSaleBalance('0.00')
     setSaleGstPreview(0)
     setCylinderSearch('')
@@ -655,6 +898,7 @@ export const InventoryPage = () => {
 
   const resetEmptyReturnModal = () => {
     setEmptyReturnModal(false)
+    setEmptyReturnEditItem(null)
     setCustomerSearch('')
     setCylinderSearch('')
     emptyReturnForm.reset({
@@ -668,6 +912,7 @@ export const InventoryPage = () => {
 
   const resetLoadReturnModal = () => {
     setLoadReturnModal(false)
+    setLoadReturnEditItem(null)
     setCustomerSearch('')
     setCylinderSearch('')
     loadReturnForm.reset({
@@ -700,6 +945,7 @@ export const InventoryPage = () => {
     { key: 'supplierName', label: 'Supplier', sortable: true },
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
+    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'voided' ? 'rejected' : 'approved'} label={row.status === 'voided' ? 'Voided' : 'Active'} /> },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
     { key: 'gst', label: 'GST %' },
     { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
@@ -707,12 +953,23 @@ export const InventoryPage = () => {
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
+    { key: 'actions', label: 'Actions', render: (row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => openPurchaseEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
+        </button>
+        <button onClick={() => setVoidTarget({ collectionName: 'purchases', id: row.id, label: row.dcNumber, record: row })} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    ) },
   ]
 
   const saleColumns = [
     { key: 'customerName', label: 'Customer', sortable: true },
     { key: 'date', label: 'Date', render: (row) => fmtDate(row.date) },
     { key: 'dcNumber', label: 'DC Number' },
+    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'voided' ? 'rejected' : 'approved'} label={row.status === 'voided' ? 'Voided' : 'Active'} /> },
     { key: 'currentAmount', label: 'Amount (₹)', render: (row) => fmtCurrency(row.currentAmount) },
     { key: 'gst', label: 'GST %' },
     { key: 'gstAmount', label: 'Tax (₹)', render: (row) => fmtCurrency(row.gstAmount || 0) },
@@ -720,23 +977,55 @@ export const InventoryPage = () => {
     { key: 'paidAmount', label: 'Paid (₹)', render: (row) => fmtCurrency(row.paidAmount) },
     { key: 'balanceAmount', label: 'Balance (₹)', render: (row) => fmtCurrency(row.balanceAmount || 0) },
     { key: 'recordedBy', label: 'By' },
+    { key: 'actions', label: 'Actions', render: (row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => openSaleEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
+        </button>
+        <button onClick={() => setVoidTarget({ collectionName: 'sales', id: row.id, label: row.dcNumber, record: row })} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    ) },
   ]
 
   const emptyReturnColumns = [
     { key: 'cylinderCode', label: 'Cylinder Code' },
     { key: 'gasType', label: 'Gas Type' },
+    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'voided' ? 'rejected' : 'approved'} label={row.status === 'voided' ? 'Voided' : 'Active'} /> },
     { key: 'notes', label: 'Notes' },
     { key: 'recordedBy', label: 'By' },
     { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
+    { key: 'actions', label: 'Actions', render: (row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => openEmptyReturnEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
+        </button>
+        <button onClick={() => setVoidTarget({ collectionName: 'emptyReturns', id: row.sourceId, label: row.dcNumber, record: row })} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    ) },
   ]
 
   const loadReturnColumns = [
     { key: 'cylinderCode', label: 'Cylinder Code' },
     { key: 'gasType', label: 'Gas Type' },
+    { key: 'status', label: 'Status', render: (row) => <Badge status={row.status === 'voided' ? 'rejected' : 'approved'} label={row.status === 'voided' ? 'Voided' : 'Active'} /> },
     { key: 'faultDescription', label: 'Fault Description' },
     { key: 'notes', label: 'Notes' },
     { key: 'recordedBy', label: 'By' },
     { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
+    { key: 'actions', label: 'Actions', render: (row) => (
+      <div className="flex items-center gap-2">
+        <button onClick={() => openLoadReturnEdit(row)} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 disabled:opacity-40 transition-colors">
+          <Edit2 className="h-4 w-4" />
+        </button>
+        <button onClick={() => setVoidTarget({ collectionName: 'loadReturns', id: row.sourceId, label: row.dcNumber, record: row })} disabled={row.status === 'voided'} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 disabled:opacity-40 transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    ) },
   ]
 
   return (
@@ -1604,6 +1893,15 @@ export const InventoryPage = () => {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!voidTarget}
+        onClose={() => setVoidTarget(null)}
+        onConfirm={() => { voidRecord(); setVoidTarget(null) }}
+        title="Void Record"
+        message="This will mark the selected record as voided and keep it available for audit history."
+        confirmText="Void"
+      />
     </div>
   )
 }

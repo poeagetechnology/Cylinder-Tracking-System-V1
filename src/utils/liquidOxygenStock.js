@@ -25,9 +25,16 @@ export const getLiquidOxygenStockSummary = (purchases = [], fillings = [], stock
   if (activeTransactions.length > 0) {
     const stockInTypes = ['purchase_in', 'void_reversal', 'manual_in']
     const stockOutTypes = ['filling_out', 'less_cubic_adjustment', 'manual_adjustment']
-    const totalCubicMeterStock = activeTransactions.reduce((sum, tx) =>
+    const transactionSourceIds = new Set(activeTransactions.map((tx) => `${tx.sourceCollection}:${tx.sourceId}`))
+    const legacyPurchaseStock = purchases
+      .filter((purchase) => !transactionSourceIds.has(`fillingPurchases:${purchase.id}`))
+      .reduce((sum, purchase) => sum + getPurchaseCubicMeters(purchase), 0)
+    const legacyFillingStock = fillings
+      .filter((filling) => !transactionSourceIds.has(`fillings:${filling.id}`))
+      .reduce((sum, filling) => sum + getFillingCubicMeters(filling), 0)
+    const totalCubicMeterStock = legacyPurchaseStock + activeTransactions.reduce((sum, tx) =>
       stockInTypes.includes(tx.type) ? sum + parseStockNumber(tx.quantityCubicMeters) : sum, 0)
-    const filledQuantity = activeTransactions.reduce((sum, tx) =>
+    const filledQuantity = legacyFillingStock + activeTransactions.reduce((sum, tx) =>
       stockOutTypes.includes(tx.type) ? sum + parseStockNumber(tx.quantityCubicMeters) : sum, 0)
     const remainingQuantity = Math.max(totalCubicMeterStock - filledQuantity, 0)
 

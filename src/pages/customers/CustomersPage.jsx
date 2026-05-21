@@ -63,6 +63,7 @@ export const CustomersPage = () => {
   }
 
   const openEdit = (item) => {
+    const branch = branches.find((b) => b.id === item.branchId || b.branchName === item.branchName)
     setEditItem(item)
     reset({ 
       name: item.name, 
@@ -70,7 +71,7 @@ export const CustomersPage = () => {
       phone: item.phone, 
       email: item.email || '', 
       address: item.address, 
-      branchId: item.branchId || '',
+      branchId: item.branchId || branch?.id || '',
       area: item.area || '',
       gasTypeWiseRate: item.gasTypeWiseRate || []
     })
