@@ -6,6 +6,7 @@ import { getCollection } from '../../services/firestoreService'
 import { Loader } from '../../components/ui/Loader'
 import { fmtCurrency } from '../../utils/helpers'
 import { formatCubicMeters, getLiquidOxygenStockSummary } from '../../utils/liquidOxygenStock'
+import { useAuth } from '../../context/AuthContext'
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 
@@ -19,6 +20,7 @@ const monthlyData = [
 ]
 
 export const DashboardPage = () => {
+  const { isAdmin } = useAuth()
   const [stats, setStats] = useState({
     cylinders: 0,
     customers: 0,
@@ -39,16 +41,29 @@ export const DashboardPage = () => {
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [cylinders, customers, suppliers, vehicles, expenses, fillings, fillingPurchases, stockTransactions] = await Promise.all([
-          getCollection('cylinders'),
-          getCollection('customers'),
-          getCollection('suppliers'),
-          getCollection('vehicles'),
-          getCollection('expenses'),
-          getCollection('fillings'),
-          getCollection('fillingPurchases'),
-          getCollection('stockTransactions'),
+        const safeGetCollection = async (collectionName) => {
+          try {
+            return await getCollection(collectionName)
+          } catch (error) {
+            if (error?.code === 'permission-denied') return []
+            throw error
+          }
+        }
+
+        const [cylinders, fillings, fillingPurchases, stockTransactions] = await Promise.all([
+          safeGetCollection('cylinders'),
+          safeGetCollection('fillings'),
+          safeGetCollection('fillingPurchases'),
+          safeGetCollection('stockTransactions'),
         ])
+        const [customers, suppliers, vehicles, expenses] = isAdmin
+          ? await Promise.all([
+              safeGetCollection('customers'),
+              safeGetCollection('suppliers'),
+              safeGetCollection('vehicles'),
+              safeGetCollection('expenses'),
+            ])
+          : [[], [], [], []]
         const stock = getLiquidOxygenStockSummary(fillingPurchases, fillings, stockTransactions)
 
         setStats({
@@ -73,7 +88,7 @@ export const DashboardPage = () => {
       }
     }
     loadStats()
-  }, [])
+  }, [isAdmin])
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
