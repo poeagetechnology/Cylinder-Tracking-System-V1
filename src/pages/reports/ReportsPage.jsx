@@ -163,23 +163,28 @@ const ProfitLossReport = ({ fillings, expenses, gasTypes }) => {
 }
 
 // Sales Report Component
-const SalesReport = ({ fillings, exportRows }) => {
+const SalesReport = ({ salesRecords }) => {
   const data = useMemo(() => {
     const salesByCustomer = {}
     const salesByGasType = {}
-    let totalQuantity = 0
     let totalRevenue = 0
 
-    fillings.forEach((filling) => {
-      const customer = filling.clientName || filling.customerName || 'Unknown'
-      const gasType = filling.gasTypeName || 'Unknown'
-      const revenue = filling.saleAmount || filling.amount || 0
-      const quantity = filling.quantity || 1
+    const activeSales = salesRecords.filter(s => s.status !== 'voided')
 
-      salesByCustomer[customer] = (salesByCustomer[customer] || 0) + revenue
-      salesByGasType[gasType] = (salesByGasType[gasType] || 0) + revenue
-      totalQuantity += quantity
-      totalRevenue += revenue
+    activeSales.forEach((sale) => {
+      const customer = sale.customerName || 'Unknown'
+      const amount = sale.totalAmount || sale.currentAmount || 0
+
+      salesByCustomer[customer] = (salesByCustomer[customer] || 0) + amount
+      totalRevenue += amount
+
+      if (sale.cylinders && sale.cylinders.length > 0) {
+        const perCylinder = amount / sale.cylinders.length
+        sale.cylinders.forEach(c => {
+          const gasType = c.gasType || 'Unknown'
+          salesByGasType[gasType] = (salesByGasType[gasType] || 0) + perCylinder
+        })
+      }
     })
 
     return {
@@ -189,11 +194,11 @@ const SalesReport = ({ fillings, exportRows }) => {
       salesByGasType: Object.entries(salesByGasType)
         .map(([name, amount]) => ({ name, amount }))
         .sort((a, b) => b.amount - a.amount),
-      totalQuantity,
       totalRevenue,
-      averageSale: fillings.length > 0 ? totalRevenue / fillings.length : 0,
+      averageSale: activeSales.length > 0 ? totalRevenue / activeSales.length : 0,
+      totalTransactions: activeSales.length,
     }
-  }, [fillings])
+  }, [salesRecords])
 
   const exportData = [
     ...data.salesByCustomer.map((item) => ({
@@ -217,7 +222,7 @@ const SalesReport = ({ fillings, exportRows }) => {
         </div>
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-slate-700 dark:from-purple-950/30 dark:to-pink-950/30">
           <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Transactions</p>
-          <p className="mt-2 text-3xl font-bold text-purple-700 dark:text-purple-400">{fillings.length || 0}</p>
+          <p className="mt-2 text-3xl font-bold text-purple-700 dark:text-purple-400">{data.totalTransactions || 0}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-amber-50 to-orange-50 p-6 dark:border-slate-700 dark:from-amber-950/30 dark:to-orange-950/30">
           <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Avg Transaction</p>
@@ -582,11 +587,12 @@ export const ReportsPage = () => {
 
   const { data: cylinders, loading: cylindersLoading } = useFirestoreCollection('cylinders')
   const { data: fillings, loading: fillingsLoading } = useFirestoreCollection('fillings')
+  const { data: salesRecords, loading: salesLoading } = useFirestoreCollection('sales')
   const { data: customers, loading: customersLoading } = useFirestoreCollection('customers')
   const { data: gasTypes, loading: gasTypesLoading } = useFirestoreCollection('gasTypes')
   const { data: expenses, loading: expensesLoading } = useFirestoreCollection('expenses')
 
-  const loading = cylindersLoading || fillingsLoading || customersLoading || gasTypesLoading || expensesLoading
+  const loading = cylindersLoading || fillingsLoading || salesLoading || customersLoading || gasTypesLoading || expensesLoading
 
   const records = useMemo(() => {
     const cylinderEvents = cylinders.map((cylinder) => {
@@ -704,8 +710,8 @@ export const ReportsPage = () => {
         return false
       }
 
-      if (appliedFilters.gasType && record.gasType !== appliedFilters.gasType) return false
-      if (appliedFilters.movementType && record.movementType !== appliedFilters.movementType) return false
+      if (appliedFilters.gasType && appliedFilters.gasType !== 'all' && record.gasType !== appliedFilters.gasType) return false
+      if (appliedFilters.movementType && appliedFilters.movementType !== 'all' && record.movementType !== appliedFilters.movementType) return false
       if (appliedFilters.client && appliedFilters.client !== 'all' && record.client !== appliedFilters.client) return false
       if (appliedFilters.cylinderCode && appliedFilters.cylinderCode !== 'all' && record.cylinderCode !== appliedFilters.cylinderCode) return false
 
@@ -931,6 +937,7 @@ export const ReportsPage = () => {
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
                 <option value="">Select gas type</option>
+                <option value="all">All Gas Types</option>
                 {gasTypeOptions.map((gasType) => (
                   <option key={gasType} value={gasType}>{gasType}</option>
                 ))}
@@ -944,6 +951,7 @@ export const ReportsPage = () => {
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 shadow-sm outline-none transition-colors focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900"
               >
                 <option value="">Select type</option>
+                <option value="all">All Movement Types</option>
                 {MOVEMENT_TYPES.map((movement) => (
                   <option key={movement.value} value={movement.value}>{movement.label}</option>
                 ))}
@@ -1000,7 +1008,7 @@ export const ReportsPage = () => {
       {/* Report Content */}
       <section className="space-y-6">
         {activeReport === 'profit-loss' && <ProfitLossReport fillings={fillings} expenses={expenses} gasTypes={gasTypes} />}
-        {activeReport === 'sales' && <SalesReport fillings={fillings} exportRows={exportRows} />}
+        {activeReport === 'sales' && <SalesReport salesRecords={salesRecords} />}
         {activeReport === 'expenses' && <ExpensesReport expenses={expenses} />}
         {activeReport === 'inventory' && <InventoryReport cylinders={cylinders} />}
         {activeReport === 'customers' && (
