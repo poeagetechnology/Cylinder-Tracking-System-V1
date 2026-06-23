@@ -4,7 +4,7 @@ import { yupResolver } from '@hookform/resolvers/yup'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { useAuth } from '../../context/AuthContext'
 import { addDocument, updateDocument } from '../../services/firestoreService'
-import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, TrendingUp, TrendingDown, Trash2, Search, Wind, Edit2 } from 'lucide-react'
+import { AlertTriangle, Package, CheckCircle, XCircle, Clock, Plus, TrendingUp, TrendingDown, Trash2, Search, Wind, Edit2, ShoppingCart } from 'lucide-react'
 import { StatCard } from '../../components/ui/StatCard'
 import { Badge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
@@ -20,6 +20,23 @@ import { writeAuditLog } from '../../utils/audit'
 import { getVoidPayload, hasDuplicateCylinderIds, hasDuplicateValue, normalizeText } from '../../utils/records'
 
 const ALERT_THRESHOLD = 5
+
+// Statuses that mean a cylinder is already active in inventory and cannot be re-purchased.
+// A cylinder with status 'empty' has completed its cycle and is available to purchase again.
+const PURCHASE_BLOCKED_STATUSES = ['full', 'in_use', 'maintenance']
+const PURCHASE_BLOCKED_LABELS = {
+  full: 'In Stock (Full)',
+  in_use: 'With Customer',
+  maintenance: 'Under Maintenance',
+}
+
+const getPurchaseCylinderError = (cylinder) => {
+  if (!cylinder) return null
+  if (PURCHASE_BLOCKED_STATUSES.includes(cylinder.status)) {
+    return `Cylinder ${cylinder.cylinderCode} is already active in inventory (${PURCHASE_BLOCKED_LABELS[cylinder.status]})`
+  }
+  return null
+}
 
 const purchaseSchema = Yup.object({
   supplierName: Yup.string().required('Supplier name is required'),
@@ -387,6 +404,11 @@ export const InventoryPage = () => {
   const lowStockItems = inventoryByGas.filter((i) => i.alert && i.total > 0)
   const liquidOxygenStock = getLiquidOxygenStockSummary(fillingPurchases, fillings, stockTransactions)
 
+  // Total cylinder units ever purchased (excluding voided records) — historical aggregate
+  const totalCylindersPurchased = purchases
+    .filter(p => p.status !== 'voided')
+    .reduce((sum, p) => sum + (p.cylinders?.length || 0), 0)
+
   const openPurchaseEdit = (record) => {
     setPurchaseEditItem(record)
     setSupplierSearch('')
@@ -487,7 +509,18 @@ export const InventoryPage = () => {
         setSaving(false)
         return
       }
-      
+
+      // Backend-level guard: block cylinders that are already active in inventory
+      const blockedCylinders = validCylinders
+        .map(c => cylinders.find(cy => cy.id === c.cylinderId))
+        .filter(c => c && PURCHASE_BLOCKED_STATUSES.includes(c.status))
+      if (blockedCylinders.length > 0) {
+        const codes = blockedCylinders.map(c => `${c.cylinderCode} (${PURCHASE_BLOCKED_LABELS[c.status]})`).join(', ')
+        toast.error(`Cannot purchase: ${codes} — already active in inventory`)
+        setSaving(false)
+        return
+      }
+
       const cylindersList = validCylinders.map(c => {
         const cylinder = cylinders.find(cy => cy.id === c.cylinderId)
         return {
@@ -1074,6 +1107,22 @@ export const InventoryPage = () => {
             </div>
           )}
 
+          {/* Headline KPI — Total Cylinders Purchased */}
+          <div className="flex items-center gap-5 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-blue-50 p-5 dark:border-indigo-800 dark:from-indigo-900/30 dark:to-blue-900/20">
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-900/50">
+              <ShoppingCart className="h-7 w-7 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">Total Cylinders Purchased</p>
+              <p className="text-4xl font-extrabold tracking-tight text-indigo-900 dark:text-indigo-100">
+                {totalCylindersPurchased.toLocaleString()}
+              </p>
+              <p className="mt-0.5 text-xs text-indigo-500 dark:text-indigo-400">
+                Cylinder units across all active purchase records (excluding voided)
+              </p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard title="Total Cubic Meter Stock" value={formatCubicMeters(liquidOxygenStock.totalCubicMeterStock)} icon={Package} color="blue" />
             <StatCard title="Available Stock" value={formatCubicMeters(liquidOxygenStock.availableStock)} icon={CheckCircle} color="green" />
@@ -1211,51 +1260,72 @@ export const InventoryPage = () => {
             {purchaseForm.watch('cylinders').map((cylinder, idx) => {
               const selectedCylinder = cylinders.find(c => c.id === cylinder.cylinderId)
               const alreadySelectedIds = purchaseForm.watch('cylinders').map(c => c.cylinderId).filter(Boolean)
+              const inlineError = selectedCylinder ? getPurchaseCylinderError(selectedCylinder) : null
               return (
-                <div key={idx} className="flex gap-2 mb-2">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="Search cylinder..."
-                        value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
-                        onChange={(e) => {
-                          setCylinderSearch(e.target.value)
-                          if (!e.target.value) purchaseForm.setValue(`cylinders.${idx}.cylinderId`, '')
-                        }}
-                        className="input-field pl-10 w-full"
-                      />
-                      {!selectedCylinder && cylinderSearch && filteredCylindersForSearch.filter(c => !alreadySelectedIds.includes(c.id)).length > 0 && (
-                        <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
-                          {filteredCylindersForSearch.filter(c => !alreadySelectedIds.includes(c.id)).map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
-                                setCylinderSearch('')
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
-                            >
-                              {c.cylinderCode} — {c.gasTypeName}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                <div key={idx} className="mb-3">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search cylinder..."
+                          value={selectedCylinder ? `${selectedCylinder.cylinderCode} — ${selectedCylinder.gasTypeName}` : cylinderSearch}
+                          onChange={(e) => {
+                            setCylinderSearch(e.target.value)
+                            if (!e.target.value) purchaseForm.setValue(`cylinders.${idx}.cylinderId`, '')
+                          }}
+                          className={`input-field pl-10 w-full ${inlineError ? 'border-red-400 focus:ring-red-400' : ''}`}
+                        />
+                        {!selectedCylinder && cylinderSearch && filteredCylindersForSearch.filter(c => !alreadySelectedIds.includes(c.id)).length > 0 && (
+                          <div className="absolute top-full left-0 right-0 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg mt-1 max-h-40 overflow-y-auto z-10">
+                            {filteredCylindersForSearch.filter(c => !alreadySelectedIds.includes(c.id)).map(c => {
+                              const isBlocked = PURCHASE_BLOCKED_STATUSES.includes(c.status)
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    purchaseForm.setValue(`cylinders.${idx}.cylinderId`, c.id)
+                                    setCylinderSearch('')
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 ${
+                                    isBlocked
+                                      ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30'
+                                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                                  }`}
+                                >
+                                  <span>{c.cylinderCode} — {c.gasTypeName}</span>
+                                  {isBlocked && (
+                                    <span className="flex-shrink-0 text-xs font-semibold text-red-600 dark:text-red-400">
+                                      {PURCHASE_BLOCKED_LABELS[c.status]}
+                                    </span>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    {purchaseForm.watch('cylinders').length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cyl = purchaseForm.watch('cylinders')
+                          purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
+                        }}
+                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                  {purchaseForm.watch('cylinders').length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const cyl = purchaseForm.watch('cylinders')
-                        purchaseForm.setValue('cylinders', cyl.filter((_, i) => i !== idx))
-                      }}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  {inlineError && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400">
+                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                      {inlineError}
+                    </p>
                   )}
                 </div>
               )
@@ -1266,7 +1336,7 @@ export const InventoryPage = () => {
                 const cyl = purchaseForm.watch('cylinders')
                 purchaseForm.setValue('cylinders', [...cyl, { cylinderId: '' }])
               }}
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-2"
+              className="text-sm text-primary-600 hover:text-primary-700 font-medium mt-1"
             >
               + Add Cylinder
             </button>
@@ -1359,10 +1429,20 @@ export const InventoryPage = () => {
             <Textarea {...purchaseForm.register('notes')} placeholder="Optional notes" rows="2" />
           </FormField>
 
-          <div className="flex justify-end gap-3 pt-2 border-t">
-            <button type="button" onClick={resetPurchaseModal} className="btn-secondary">Cancel</button>
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Purchase'}</button>
-          </div>
+          {(() => {
+            const hasBlockedCylinder = purchaseForm.watch('cylinders').some(c => {
+              const cyl = cylinders.find(cy => cy.id === c.cylinderId)
+              return cyl && PURCHASE_BLOCKED_STATUSES.includes(cyl.status)
+            })
+            return (
+              <div className="flex justify-end gap-3 pt-2 border-t">
+                <button type="button" onClick={resetPurchaseModal} className="btn-secondary">Cancel</button>
+                <button type="submit" disabled={saving || hasBlockedCylinder} className="btn-primary">
+                  {saving ? 'Saving...' : 'Save Purchase'}
+                </button>
+              </div>
+            )
+          })()}
         </form>
       </Modal>
 
