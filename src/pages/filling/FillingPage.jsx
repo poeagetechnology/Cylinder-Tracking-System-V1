@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { Plus, Play, Square, Wind, Search, Edit2, Trash2 } from 'lucide-react'
+import { Plus, Play, Square, Wind, Search, Edit2, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { addDocument, updateDocument } from '../../services/firestoreService'
@@ -799,128 +799,177 @@ export const FillingPage = () => {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={resetStartModal} title="Start Liquid Oxygen Filling" size="lg">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-700 dark:bg-blue-900/20">
-            <div>
-              <p className="text-gray-600 dark:text-gray-400">Available Stock</p>
-              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(availableStock)}</p>
-            </div>
-            <div>
-              <p className="text-gray-600 dark:text-gray-400">Cylinder Usage</p>
-              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(selectedFillingCubicMeters)}</p>
-            </div>
-            <div>
-              <p className="text-gray-600 dark:text-gray-400">Less Cubic</p>
-              <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(manualLessCubic)}</p>
-            </div>
-            <div>
-              <p className="text-gray-600 dark:text-gray-400">Remaining After Filling</p>
-              <p className={`font-semibold ${remainingAfterSelectedFilling < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
-                {formatCubicMeters(remainingAfterSelectedFilling)}
-              </p>
-            </div>
-          </div>
-
-          <FormField label="Search Cylinder by Number">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Enter cylinder number..."
-                value={cylinderSearch}
-                onChange={(e) => setCylinderSearch(e.target.value)}
-                className="input-field pl-10"
-              />
-            </div>
-          </FormField>
-
-          <FormField label="Less Cubic">
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={lessCubic}
-              onChange={(e) => setLessCubic(e.target.value)}
-              placeholder="Manual cubic meter deduction"
-            />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Optional manual adjustment. This amount is deducted from Liquid Oxygen stock with the selected cylinders.
-            </p>
-          </FormField>
-
-          <FormField label="Select Empty Oxygen Cylinders" required>
-            {filteredCylinders.length > 0 && (
-              <div className="mb-3">
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  {selectedCylinders.length === filteredCylinders.length ? 'Deselect All' : 'Select All'}
-                </button>
+      {/* Full-page filling form — no scroll, no modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
+          {/* Header */}
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                <Wind className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-            )}
-
-            <div className="border border-gray-300 dark:border-gray-600 rounded-lg divide-y divide-gray-200 dark:divide-gray-600 max-h-64 overflow-y-auto">
-              {filteredCylinders.length > 0 ? (
-                filteredCylinders.map((c) => (
-                  <label key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedCylinders.includes(c.id)}
-                      onChange={() => toggleCylinderSelection(c.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 cursor-pointer"
-                    />
-                    <span className="text-sm text-gray-900 dark:text-gray-100 flex-1">
-                      {c.cylinderCode} — {c.gasTypeName} ({formatCubicMeters(c.capacity)})
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                  {cylinderSearch ? 'No matching cylinders found' : 'No empty cylinders available'}
-                </div>
-              )}
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Start Liquid Oxygen Filling</h2>
             </div>
-          </FormField>
-
-          {selectedCylinders.length > 0 && (
-            <div className={`${remainingAfterSelectedFilling < 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20'} p-3 rounded-lg`}>
-              <p className={`text-sm ${remainingAfterSelectedFilling < 0 ? 'text-red-700 dark:text-red-400' : 'text-blue-700 dark:text-blue-400'}`}>
-                <span className="font-semibold">{selectedCylinders.length}</span> cylinder(s) selected,
-                {' '}using <span className="font-semibold">{formatCubicMeters(selectedFillingCubicMeters)}</span>.
-                {' '}Less Cubic: <span className="font-semibold">{formatCubicMeters(manualLessCubic)}</span>.
-                {' '}Remaining stock: <span className="font-semibold">{formatCubicMeters(remainingAfterSelectedFilling)}</span>.
-              </p>
-            </div>
-          )}
-
-          {availableStock <= 0 && (
-            <p className="text-red-600 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
-              No Liquid Oxygen stock is available. Add a cubic meter purchase before starting filling.
-            </p>
-          )}
-
-          {emptyCylinders.length === 0 && !cylinderSearch && (
-            <p className="text-yellow-600 text-sm bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg">
-              No empty Oxygen cylinders available. Mark Oxygen cylinders as empty first.
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={resetStartModal} className="btn-secondary">Cancel</button>
-            <button
-              type="button"
-              onClick={onStart}
-              disabled={saving || selectedCylinders.length === 0 || selectedFillingCubicMeters <= 0 || manualLessCubic < 0 || remainingAfterSelectedFilling < 0}
-              className="btn-primary"
-            >
-              {saving ? 'Starting...' : 'Start Filling'}
+            <button onClick={resetStartModal} className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              <X className="h-5 w-5 text-gray-500" />
             </button>
           </div>
+
+          {/* Body — two-column layout */}
+          <div className="flex flex-1 overflow-hidden">
+
+            {/* Left column: cylinder selection */}
+            <div className="flex flex-1 flex-col overflow-hidden border-r border-gray-200 p-6 dark:border-gray-700">
+
+              {/* Stock metrics */}
+              <div className="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm dark:border-blue-700 dark:bg-blue-900/20 sm:grid-cols-4">
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Available Stock</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(availableStock)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Cylinder Usage</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(selectedFillingCubicMeters)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Less Cubic</p>
+                  <p className="font-semibold text-gray-900 dark:text-gray-100">{formatCubicMeters(manualLessCubic)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 dark:text-gray-400">Remaining After Filling</p>
+                  <p className={`font-semibold ${remainingAfterSelectedFilling < 0 ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                    {formatCubicMeters(remainingAfterSelectedFilling)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Cylinder search */}
+              <div className="mb-4">
+                <label className="label">Search Cylinder by Number</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Enter cylinder number..."
+                    value={cylinderSearch}
+                    onChange={(e) => setCylinderSearch(e.target.value)}
+                    className="input-field pl-10"
+                  />
+                </div>
+              </div>
+
+              {/* Cylinder list — fills all remaining height */}
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="label mb-0">
+                    Select Empty Oxygen Cylinders <span className="text-red-500">*</span>
+                  </label>
+                  {filteredCylinders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSelectAll}
+                      className="text-sm font-medium text-primary-600 hover:text-primary-700"
+                    >
+                      {selectedCylinders.length === filteredCylinders.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 overflow-y-auto rounded-lg border border-gray-300 divide-y divide-gray-200 dark:border-gray-600 dark:divide-gray-600">
+                  {filteredCylinders.length > 0 ? (
+                    filteredCylinders.map((c) => (
+                      <label key={c.id} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <input
+                          type="checkbox"
+                          checked={selectedCylinders.includes(c.id)}
+                          onChange={() => toggleCylinderSelection(c.id)}
+                          className="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600"
+                        />
+                        <span className="flex-1 text-sm text-gray-900 dark:text-gray-100">
+                          {c.cylinderCode} — {c.gasTypeName} ({formatCubicMeters(c.capacity)})
+                        </span>
+                      </label>
+                    ))
+                  ) : (
+                    <div className="px-4 py-8 text-center text-sm text-gray-500">
+                      {cylinderSearch ? 'No matching cylinders found' : 'No empty cylinders available'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right column: controls + actions */}
+            <div className="flex w-80 flex-col gap-4 overflow-y-auto p-6 xl:w-96">
+
+              <FormField label="Less Cubic">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={lessCubic}
+                  onChange={(e) => setLessCubic(e.target.value)}
+                  placeholder="Manual cubic meter deduction"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Optional manual adjustment deducted from Liquid Oxygen stock alongside selected cylinders.
+                </p>
+              </FormField>
+
+              {selectedCylinders.length > 0 && (
+                <div className={`rounded-lg p-4 text-sm ${remainingAfterSelectedFilling < 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20'}`}>
+                  <p className={`font-medium ${remainingAfterSelectedFilling < 0 ? 'text-red-700 dark:text-red-400' : 'text-blue-700 dark:text-blue-400'}`}>
+                    Selection Summary
+                  </p>
+                  <div className="mt-2 space-y-1 text-gray-600 dark:text-gray-300">
+                    <div className="flex justify-between">
+                      <span>Cylinders selected</span>
+                      <span className="font-semibold">{selectedCylinders.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cylinder usage</span>
+                      <span className="font-semibold">{formatCubicMeters(selectedFillingCubicMeters)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Less cubic</span>
+                      <span className="font-semibold">{formatCubicMeters(manualLessCubic)}</span>
+                    </div>
+                    <div className={`flex justify-between border-t pt-1 font-semibold ${remainingAfterSelectedFilling < 0 ? 'border-red-200 dark:border-red-700 text-red-700 dark:text-red-400' : 'border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-400'}`}>
+                      <span>Remaining stock</span>
+                      <span>{formatCubicMeters(remainingAfterSelectedFilling)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {availableStock <= 0 && (
+                <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20">
+                  No Liquid Oxygen stock is available. Add a cubic meter purchase before starting filling.
+                </p>
+              )}
+
+              {emptyCylinders.length === 0 && !cylinderSearch && (
+                <p className="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-600 dark:bg-yellow-900/20">
+                  No empty Oxygen cylinders available. Mark Oxygen cylinders as empty first.
+                </p>
+              )}
+
+              <div className="flex-1" />
+
+              <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={onStart}
+                  disabled={saving || selectedCylinders.length === 0 || selectedFillingCubicMeters <= 0 || manualLessCubic < 0 || remainingAfterSelectedFilling < 0}
+                  className="btn-primary w-full"
+                >
+                  {saving ? 'Starting...' : `Start Filling${selectedCylinders.length > 0 ? ` (${selectedCylinders.length})` : ''}`}
+                </button>
+                <button type="button" onClick={resetStartModal} className="btn-secondary w-full">Cancel</button>
+              </div>
+            </div>
+          </div>
         </div>
-      </Modal>
+      )}
 
       <Modal isOpen={!!fillingEditItem} onClose={() => { setFillingEditItem(null); setEditLessCubic('') }} title="Edit Filling Adjustment">
         <div className="space-y-4">

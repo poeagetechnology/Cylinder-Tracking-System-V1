@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { ArrowRight, CalendarRange, Download, FileSpreadsheet, FilterX, SearchX, TrendingUp, TrendingDown, BarChart3, Package, Users, FileJson } from 'lucide-react'
+import { ArrowRight, CalendarRange, Download, FileSpreadsheet, FilterX, SearchX, TrendingUp, TrendingDown, BarChart3, Package, Users, FileJson, Receipt } from 'lucide-react'
 import { useFirestoreCollection } from '../../hooks/useFirestore'
 import { exportToCSV, exportToExcel, fmtDate, toDate, fmtCurrency } from '../../utils/helpers'
 import { Loader } from '../../components/ui/Loader'
@@ -162,137 +162,301 @@ const ProfitLossReport = ({ fillings, expenses, gasTypes }) => {
   )
 }
 
-// Sales Report Component
+// Sales Report Component — full customised view with filters, transactions table, breakdowns
 const SalesReport = ({ salesRecords }) => {
-  const data = useMemo(() => {
-    const salesByCustomer = {}
-    const salesByGasType = {}
-    let totalRevenue = 0
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [filterCustomer, setFilterCustomer] = useState('')
+  const [filterGasType, setFilterGasType] = useState('')
 
-    const activeSales = salesRecords.filter(s => s.status !== 'voided')
+  // Derive filter options from data
+  const customerOptions = useMemo(() => {
+    const names = new Set(salesRecords.filter(s => s.status !== 'voided').map(s => s.customerName).filter(Boolean))
+    return Array.from(names).sort()
+  }, [salesRecords])
 
-    activeSales.forEach((sale) => {
+  const gasTypeOptions = useMemo(() => {
+    const types = new Set()
+    salesRecords.filter(s => s.status !== 'voided').forEach(s => {
+      s.cylinders?.forEach(c => { if (c.gasType) types.add(c.gasType) })
+    })
+    return Array.from(types).sort()
+  }, [salesRecords])
+
+  const filteredSales = useMemo(() => {
+    return salesRecords.filter(s => {
+      if (s.status === 'voided') return false
+      const saleDate = s.date || (s.createdAt ? s.createdAt.slice(0, 10) : '')
+      if (dateFrom && saleDate && saleDate < dateFrom) return false
+      if (dateTo && saleDate && saleDate > dateTo) return false
+      if (filterCustomer && s.customerName !== filterCustomer) return false
+      if (filterGasType) {
+        if (!s.cylinders?.some(c => c.gasType === filterGasType)) return false
+      }
+      return true
+    })
+  }, [salesRecords, dateFrom, dateTo, filterCustomer, filterGasType])
+
+  const summary = useMemo(() => {
+    const totalRevenue = filteredSales.reduce((sum, s) => sum + (s.totalAmount || s.currentAmount || 0), 0)
+    const totalPaid = filteredSales.reduce((sum, s) => sum + (s.paidAmount || 0), 0)
+    const totalBalance = filteredSales.reduce((sum, s) => sum + (s.balanceAmount || 0), 0)
+    const totalCylinders = filteredSales.reduce((sum, s) => sum + (s.cylinders?.length || 0), 0)
+
+    const byCustomer = {}
+    const byGasType = {}
+    filteredSales.forEach(sale => {
       const customer = sale.customerName || 'Unknown'
       const amount = sale.totalAmount || sale.currentAmount || 0
+      if (!byCustomer[customer]) byCustomer[customer] = { amount: 0, count: 0 }
+      byCustomer[customer].amount += amount
+      byCustomer[customer].count += 1
 
-      salesByCustomer[customer] = (salesByCustomer[customer] || 0) + amount
-      totalRevenue += amount
-
-      if (sale.cylinders && sale.cylinders.length > 0) {
-        const perCylinder = amount / sale.cylinders.length
+      if (sale.cylinders?.length > 0) {
+        const perCyl = amount / sale.cylinders.length
         sale.cylinders.forEach(c => {
-          const gasType = c.gasType || 'Unknown'
-          salesByGasType[gasType] = (salesByGasType[gasType] || 0) + perCylinder
+          const gt = c.gasType || 'Unknown'
+          byGasType[gt] = (byGasType[gt] || 0) + perCyl
         })
       }
     })
 
     return {
-      salesByCustomer: Object.entries(salesByCustomer)
+      totalRevenue, totalPaid, totalBalance, totalCylinders,
+      byCustomer: Object.entries(byCustomer)
+        .map(([name, v]) => ({ name, amount: v.amount, count: v.count }))
+        .sort((a, b) => b.amount - a.amount),
+      byGasType: Object.entries(byGasType)
         .map(([name, amount]) => ({ name, amount }))
         .sort((a, b) => b.amount - a.amount),
-      salesByGasType: Object.entries(salesByGasType)
-        .map(([name, amount]) => ({ name, amount }))
-        .sort((a, b) => b.amount - a.amount),
-      totalRevenue,
-      averageSale: activeSales.length > 0 ? totalRevenue / activeSales.length : 0,
-      totalTransactions: activeSales.length,
     }
-  }, [salesRecords])
+  }, [filteredSales])
 
-  const exportData = [
-    ...data.salesByCustomer.map((item) => ({
-      Category: 'Customer',
-      Name: item.name,
-      Amount: item.amount,
-    })),
-    ...data.salesByGasType.map((item) => ({
-      Category: 'Gas Type',
-      Name: item.name,
-      Amount: item.amount,
-    })),
-  ]
+  const exportDetailRows = filteredSales.map(s => ({
+    Date: s.date || fmtDate(s.createdAt),
+    'DC Number': s.dcNumber || '—',
+    Customer: s.customerName || '—',
+    Cylinders: s.cylinders?.map(c => c.cylinderCode).join(', ') || '—',
+    'Gas Type': [...new Set((s.cylinders || []).map(c => c.gasType).filter(Boolean))].join(', ') || '—',
+    'Cylinder Count': s.cylinders?.length || 0,
+    'Amount (₹)': s.currentAmount || 0,
+    'GST %': s.gst || 0,
+    'GST Amount (₹)': s.gstAmount || 0,
+    'Total (₹)': s.totalAmount || s.currentAmount || 0,
+    'Paid (₹)': s.paidAmount || 0,
+    'Balance (₹)': s.balanceAmount || 0,
+    'Recorded By': s.recordedBy || '—',
+  }))
+
+  const hasActiveFilters = dateFrom || dateTo || filterCustomer || filterGasType
+  const inputCls = 'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200 dark:focus:bg-slate-900'
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-6 dark:border-slate-700 dark:from-blue-950/30 dark:to-indigo-950/30">
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Sales</p>
-          <p className="mt-2 text-3xl font-bold text-blue-700 dark:text-blue-400">{fmtCurrency(data.totalRevenue)}</p>
+
+      {/* Filter bar */}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800 md:p-6">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-500 dark:bg-blue-500/10 dark:text-blue-300">
+            <Receipt className="h-5 w-5" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Filter Sales Report</h2>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-slate-700 dark:from-purple-950/30 dark:to-pink-950/30">
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Transactions</p>
-          <p className="mt-2 text-3xl font-bold text-purple-700 dark:text-purple-400">{data.totalTransactions || 0}</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <ReportField label="Date From">
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={inputCls} />
+          </ReportField>
+          <ReportField label="Date To">
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={inputCls} />
+          </ReportField>
+          <ReportField label="Customer">
+            <select value={filterCustomer} onChange={e => setFilterCustomer(e.target.value)} className={inputCls}>
+              <option value="">All Customers</option>
+              {customerOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </ReportField>
+          <ReportField label="Gas Type">
+            <select value={filterGasType} onChange={e => setFilterGasType(e.target.value)} className={inputCls}>
+              <option value="">All Gas Types</option>
+              {gasTypeOptions.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </ReportField>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-amber-50 to-orange-50 p-6 dark:border-slate-700 dark:from-amber-950/30 dark:to-orange-950/30">
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Avg Transaction</p>
-          <p className="mt-2 text-3xl font-bold text-amber-700 dark:text-amber-400">{fmtCurrency(data.averageSale)}</p>
+        {hasActiveFilters && (
+          <button
+            onClick={() => { setDateFrom(''); setDateTo(''); setFilterCustomer(''); setFilterGasType('') }}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            <FilterX className="h-4 w-4" />
+            Clear Filters
+          </button>
+        )}
+      </section>
+
+      {/* KPI cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-5 dark:border-slate-700 dark:from-blue-950/30 dark:to-indigo-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Revenue</p>
+          <p className="mt-1 text-2xl font-bold text-blue-700 dark:text-blue-400">{fmtCurrency(summary.totalRevenue)}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{filteredSales.length} sale{filteredSales.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-green-50 to-emerald-50 p-5 dark:border-slate-700 dark:from-green-950/30 dark:to-emerald-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Amount Paid</p>
+          <p className="mt-1 text-2xl font-bold text-green-700 dark:text-green-400">{fmtCurrency(summary.totalPaid)}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{summary.totalCylinders} cylinder unit{summary.totalCylinders !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-red-50 to-pink-50 p-5 dark:border-slate-700 dark:from-red-950/30 dark:to-pink-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Outstanding Balance</p>
+          <p className="mt-1 text-2xl font-bold text-red-700 dark:text-red-400">{fmtCurrency(summary.totalBalance)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-amber-50 to-orange-50 p-5 dark:border-slate-700 dark:from-amber-950/30 dark:to-orange-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Avg Sale Value</p>
+          <p className="mt-1 text-2xl font-bold text-amber-700 dark:text-amber-400">
+            {fmtCurrency(filteredSales.length > 0 ? summary.totalRevenue / filteredSales.length : 0)}
+          </p>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
-          <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Sales by Customer</h3>
-            <div className="flex gap-1">
-              <button
-                onClick={() => exportToCSV(data.salesByCustomer.map((item) => ({ Customer: item.name, Amount: item.amount })), 'sales-by-customer')}
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-              >
-                CSV
-              </button>
-              <button
-                onClick={() => exportToExcel(data.salesByCustomer.map((item) => ({ Customer: item.name, Amount: item.amount })), 'sales-by-customer', 'Customers')}
-                className="inline-flex items-center justify-center rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
-              >
-                XL
-              </button>
-            </div>
+      {/* Transactions table */}
+      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-4 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Sales Transactions</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {filteredSales.length} record{filteredSales.length !== 1 ? 's' : ''}
+              {hasActiveFilters ? ' (filtered)' : ''}
+            </p>
           </div>
-          <div className="space-y-3">
-            {data.salesByCustomer.length > 0 ? (
-              data.salesByCustomer.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between pb-3">
-                  <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtCurrency(item.amount)}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-slate-500 dark:text-slate-400">No sales data</p>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => exportToCSV(exportDetailRows, 'sales-transactions')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" /> CSV
+            </button>
+            <button
+              onClick={() => exportToExcel(exportDetailRows, 'sales-transactions', 'Sales')}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
+            >
+              <FileJson className="h-4 w-4" /> Excel
+            </button>
           </div>
         </div>
+        <div className="overflow-x-auto">
+          {filteredSales.length > 0 ? (
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+              <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <tr>
+                  {['Date', 'DC Number', 'Customer', 'Cylinders', 'Gas Type', 'Amount', 'GST%', 'Total', 'Paid', 'Balance', 'By'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {filteredSales.map(s => (
+                  <tr key={s.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/40">
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200 whitespace-nowrap">{fmtDate(s.date || s.createdAt)}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">{s.dcNumber || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200 whitespace-nowrap">{s.customerName || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-300 whitespace-nowrap">
+                      {s.cylinders?.map(c => c.cylinderCode).join(', ') || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-300 whitespace-nowrap">
+                      {[...new Set((s.cylinders || []).map(c => c.gasType).filter(Boolean))].join(', ') || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-200 whitespace-nowrap">{fmtCurrency(s.currentAmount || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-300 whitespace-nowrap">{s.gst || 0}%</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">{fmtCurrency(s.totalAmount || s.currentAmount || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-green-700 dark:text-green-400 whitespace-nowrap">{fmtCurrency(s.paidAmount || 0)}</td>
+                    <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap" style={{ color: (s.balanceAmount || 0) > 0 ? '#dc2626' : '#16a34a' }}>
+                      {fmtCurrency(s.balanceAmount || 0)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-400 dark:text-slate-500 whitespace-nowrap">{s.recordedBy || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="px-6 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+              No sales records match the selected filters.
+            </div>
+          )}
+        </div>
+      </div>
 
+      {/* Breakdowns */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* By Customer */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
           <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Sales by Gas Type</h3>
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Sales by Customer</h3>
             <div className="flex gap-1">
               <button
-                onClick={() => exportToCSV(data.salesByGasType.map((item) => ({ 'Gas Type': item.name, Amount: item.amount })), 'sales-by-gas')}
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-              >
-                CSV
-              </button>
+                onClick={() => exportToCSV(summary.byCustomer.map(i => ({ Customer: i.name, Transactions: i.count, 'Total (₹)': i.amount })), 'sales-by-customer')}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+              >CSV</button>
               <button
-                onClick={() => exportToExcel(data.salesByGasType.map((item) => ({ 'Gas Type': item.name, Amount: item.amount })), 'sales-by-gas', 'Gas Types')}
-                className="inline-flex items-center justify-center rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700"
-              >
-                XL
-              </button>
+                onClick={() => exportToExcel(summary.byCustomer.map(i => ({ Customer: i.name, Transactions: i.count, 'Total (₹)': i.amount })), 'sales-by-customer', 'By Customer')}
+                className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+              >XL</button>
             </div>
           </div>
-          <div className="space-y-3">
-            {data.salesByGasType.length > 0 ? (
-              data.salesByGasType.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between pb-3">
-                  <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtCurrency(item.amount)}</span>
+          {summary.byCustomer.length > 0 ? (
+            <div className="space-y-3">
+              {summary.byCustomer.map((item, idx) => (
+                <div key={idx}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtCurrency(item.amount)}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                      style={{ width: `${summary.totalRevenue > 0 ? (item.amount / summary.totalRevenue) * 100 : 0}%` }} />
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-400">{item.count} transaction{item.count !== 1 ? 's' : ''}</p>
                 </div>
-              ))
-            ) : (
-              <p className="text-slate-500 dark:text-slate-400">No sales data</p>
-            )}
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No data</p>
+          )}
+        </div>
+
+        {/* By Gas Type */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
+          <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-4 dark:border-slate-700">
+            <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Sales by Gas Type</h3>
+            <div className="flex gap-1">
+              <button
+                onClick={() => exportToCSV(summary.byGasType.map(i => ({ 'Gas Type': i.name, 'Amount (₹)': i.amount })), 'sales-by-gas')}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+              >CSV</button>
+              <button
+                onClick={() => exportToExcel(summary.byGasType.map(i => ({ 'Gas Type': i.name, 'Amount (₹)': i.amount })), 'sales-by-gas', 'By Gas')}
+                className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+              >XL</button>
+            </div>
           </div>
+          {summary.byGasType.length > 0 ? (
+            <div className="space-y-3">
+              {summary.byGasType.map((item, idx) => (
+                <div key={idx}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtCurrency(item.amount)}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
+                    <div className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full"
+                      style={{ width: `${summary.totalRevenue > 0 ? (item.amount / summary.totalRevenue) * 100 : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No data</p>
+          )}
         </div>
       </div>
     </div>

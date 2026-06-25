@@ -62,7 +62,10 @@ export const statusClass = (status) => {
 
 // CSV export
 export const exportToCSV = (data, filename = 'export') => {
-  if (!data.length) return
+  if (!data || !data.length) {
+    alert('No data available to export.')
+    return
+  }
   const headers = Object.keys(data[0])
   const csvContent = [
     headers.join(','),
@@ -70,12 +73,13 @@ export const exportToCSV = (data, filename = 'export') => {
       headers.map((h) => {
         const val = row[h] ?? ''
         const str = String(val).replace(/"/g, '""')
-        return str.includes(',') || str.includes('"') ? `"${str}"` : str
+        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str
       }).join(',')
     ),
   ].join('\n')
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const bom = '﻿' // UTF-8 BOM so Excel opens it correctly
+  const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -86,38 +90,30 @@ export const exportToCSV = (data, filename = 'export') => {
   URL.revokeObjectURL(url)
 }
 
-// Excel export
+// Excel export — Vite bundles xlsx (CJS) wrapped in { default: ... }, so unwrap before use
 export const exportToExcel = async (data, filename = 'export', sheetName = 'Sheet1') => {
+  if (!data || !data.length) {
+    alert('No data available to export.')
+    return
+  }
   try {
-    const XLSX = await import('xlsx')
-    if (!data.length) return
+    const xlsxModule = await import('xlsx')
+    // Dynamic CJS import via Vite returns { default: xlsxLib } — unwrap if needed
+    const XLSX = xlsxModule.default ?? xlsxModule
 
     const worksheet = XLSX.utils.json_to_sheet(data)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
 
-    // Set column widths
     const colWidths = Object.keys(data[0]).map((key) => ({
-      wch: Math.max(key.length, 12),
+      wch: Math.max(key.length, 15),
     }))
     worksheet['!cols'] = colWidths
 
-    // Style header row
-    const range = XLSX.utils.decode_range(worksheet['!ref'])
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const address = XLSX.utils.encode_col(C) + '1'
-      if (!worksheet[address]) continue
-      worksheet[address].s = {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '4F46E5' } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-      }
-    }
-
     XLSX.writeFile(workbook, `${filename}-${format(new Date(), 'yyyy-MM-dd')}.xlsx`)
   } catch (error) {
-    console.error('Error exporting to Excel:', error)
-    alert('Failed to export to Excel. Please install xlsx package: npm install xlsx')
+    console.error('Excel export error:', error)
+    alert('Excel export failed: ' + error.message)
   }
 }
 
